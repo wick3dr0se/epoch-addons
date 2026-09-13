@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cff1784d1E|r|cffe5e3e3lvUI|r |cfff0a0d0Epoch Seal Twist|r
+## Notes: Paladin seal-twisting helper for Project Epoch
+## Author: wick3dr0se
+## Version: 1.0.0
+## SavedVariables: EpochSealTwistDB
+## OptionalDeps: ElvUI, ElvUI_SwingBar
+
+EpochSealTwist.lua

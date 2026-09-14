@@ -1,5 +1,5 @@
 --[[
-    ElvUI Epoch Seal Twist — Paladin seal-twisting helper for Project Epoch
+    ElvUI Seal Twist — Paladin seal-twisting helper for Project Epoch
     Single icon + bar color change during the twist window on ElvUI_SwingBar.
 ]]
 
@@ -61,7 +61,7 @@ local hookInstalled    = false
 ---------------------------------------------------------------------------
 local DEBUG = false
 local function dbg(msg)
-    if DEBUG then print("|cfff0a0d0EpochSealTwist|r: " .. msg) end
+    if DEBUG then print("|cfff0a0d0SealTwist|r: " .. msg) end
 end
 
 ---------------------------------------------------------------------------
@@ -277,20 +277,20 @@ f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15)
     if event == "ADDON_LOADED" then
         if arg1 == addonName then
-            EpochSealTwistDB = EpochSealTwistDB or {}
+            ElvUI_SealTwistDB = ElvUI_SealTwistDB or {}
             for k, v in pairs(DEFAULTS) do
-                if EpochSealTwistDB[k] == nil then
+                if ElvUI_SealTwistDB[k] == nil then
                     if type(v) == "table" then
-                        EpochSealTwistDB[k] = {}
+                        ElvUI_SealTwistDB[k] = {}
                         for kk, vv in pairs(v) do
-                            EpochSealTwistDB[k][kk] = vv
+                            ElvUI_SealTwistDB[k][kk] = vv
                         end
                     else
-                        EpochSealTwistDB[k] = v
+                        ElvUI_SealTwistDB[k] = v
                     end
                 end
             end
-            db = EpochSealTwistDB
+            db = ElvUI_SealTwistDB
 
             local E = unpack(ElvUI)
             local EP = E.Libs.EP
@@ -299,11 +299,11 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
                     E.Options.args.epochSealTwist = {
                         order = 51,
                         type  = "group",
-                        name  = "|cfff0a0d0Epoch Seal Twist|r",
+                        name  = "|cfff0a0d0Seal Twist|r",
                         args  = {
                             header = {
                                 order = 1, type = "header",
-                                name  = "|cfff0a0d0Epoch Seal Twist|r",
+                                name  = "|cfff0a0d0Seal Twist|r",
                             },
                             desc = {
                                 order = 2, type = "description",

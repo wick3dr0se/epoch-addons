@@ -12,7 +12,7 @@ Minimal damage meter for Project Epoch. Tracks damage per spell with DPS, hit co
 
 ## Dependencies
 
-- [ElvUI Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) -- Epoch's custom ElvUI fork
+- [ElvUI](https://github.com/ElvUI-WotLK/ElvUI) -- ElvUI for WotLK 3.3.5
 
 ## Configuration
 

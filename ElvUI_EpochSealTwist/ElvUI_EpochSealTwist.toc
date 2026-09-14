@@ -4,6 +4,6 @@
 ## Author: wick3dr0se
 ## Version: 1.0.0
 ## SavedVariables: EpochSealTwistDB
-## OptionalDeps: ElvUI, ElvUI_SwingBar
+## Dependencies: ElvUI, ElvUI_SwingBar
 
-EpochSealTwist.lua
+ElvUI_EpochSealTwist.lua

@@ -2,7 +2,7 @@
 ## Title: |cff1784d1E|r|cffe5e3e3lvUI|r |cfff0a0d0Seal Twist|r
 ## Notes: Paladin seal-twisting helper for WoW 3.3.5
 ## Author: wick3dr0se
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: ElvUI_SealTwistDB
 ## Dependencies: ElvUI, ElvUI_SwingBar
 

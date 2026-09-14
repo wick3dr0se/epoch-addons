@@ -1,6 +1,7 @@
 --[[
-    ElvUI Seal Twist — Paladin seal-twisting helper for Project Epoch
-    Single icon + bar color change during the twist window on ElvUI_SwingBar.
+    ElvUI Seal Twist — Paladin seal-twisting helper for WoW 3.3.5
+    Judgment-CD based rotation: Primary seal → Finisher seal (twist) → Swing → Judgment → Primary seal.
+    Only suggests the finisher seal when Judgment is off cooldown.
 ]]
 
 local addonName, ns = ...
@@ -38,23 +39,27 @@ end)
 ---------------------------------------------------------------------------
 local DEFAULTS = {
     twistWindow     = 0.40,   -- twist zone (seconds before swing; seal lingers 0.5s)
-    barColor        = { r = 1.0, g = 0.2,  b = 0.1 },   -- red during twist window
-    iconSize        = 32,     -- next-seal icon size (pixels)
+    judgementCD     = 1.5,    -- show finisher when Judgment is within this many seconds of being ready
+    barColor        = { r = 1.0, g = 0.2, b = 0.1 },   -- red during twist window
+    iconSize        = 32,     -- icon size (pixels)
     iconPosition    = "RIGHT", -- icon position: LEFT, RIGHT, TOP, BOTTOM
     iconXOffset     = 8,      -- horizontal offset from bar edge
     iconYOffset     = 0,      -- vertical offset from bar edge
-    sequence        = { "Seal of Command", "Seal of Righteousness" },
+    primarySeal     = "Seal of Command",
+    finisherSeal    = "Seal of Righteousness",
 }
 
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
 local db
-local currentSealIndex = 1
-local overlay          = nil   -- bar color overlay frame
-local iconFrame        = nil   -- the next-seal icon
+local overlay          = nil
+local iconFrame        = nil
 local hookedBar        = nil
 local hookInstalled    = false
+local activeSeal       = nil   -- which seal is currently buffed
+local phase            = "idle" -- "idle" | "twist" | "judgement" | "primary"
+local swingLanded      = false  -- true between swing landing and next OnUpdate
 
 ---------------------------------------------------------------------------
 -- Debug
@@ -65,36 +70,42 @@ local function dbg(msg)
 end
 
 ---------------------------------------------------------------------------
--- Seal helpers
+-- Helpers
 ---------------------------------------------------------------------------
 
 local function DetectActiveSeal()
     for i = 1, 40 do
         local name = UnitBuff("player", i)
         if not name then break end
-        for j, sealName in ipairs(db.sequence) do
-            if name == sealName then return j end
-        end
+        if name == db.primarySeal then return db.primarySeal end
+        if name == db.finisherSeal then return db.finisherSeal end
     end
     return nil
 end
 
--- Returns the name of the seal to suggest next
-local function GetNextSeal()
-    local idx = DetectActiveSeal()
-    if idx then
-        currentSealIndex = idx
-        -- Active seal found — suggest the next one in sequence
-        local nextIdx = (currentSealIndex % #db.sequence) + 1
-        return db.sequence[nextIdx]
-    else
-        -- No seal active — suggest the first in sequence (default)
-        return db.sequence[1]
-    end
-end
-
 local function GetSealIcon(sealName)
     local _, _, icon = GetSpellInfo(sealName)
+    return icon
+end
+
+local function GetJudgementCooldown()
+    local start, duration, enable = GetSpellCooldown("Judgement")
+    if not start or start == 0 then return 0 end
+    local remaining = (start + duration) - GetTime()
+    if remaining < 0 then remaining = 0 end
+    return remaining
+end
+
+local function IsJudgementReady()
+    return GetJudgementCooldown() == 0
+end
+
+local function IsJudgementNearlyReady()
+    return GetJudgementCooldown() <= db.judgementCD
+end
+
+local function GetJudgementIcon()
+    local _, _, icon = GetSpellInfo("Judgement")
     return icon
 end
 
@@ -103,7 +114,6 @@ end
 ---------------------------------------------------------------------------
 
 local function CreateOverlay(bar)
-    -- Bar color overlay — sits on top of the bar fill
     local f = CreateFrame("Frame", nil, bar)
     f:SetFrameLevel(bar:GetFrameLevel() + 5)
     f.tex = f:CreateTexture(nil, "OVERLAY")
@@ -112,12 +122,11 @@ local function CreateOverlay(bar)
     f.tex:SetBlendMode("ADD")
     f:Hide()
 
-    -- Next-seal icon
     local icon = CreateFrame("Frame", nil, bar)
     icon:SetFrameLevel(bar:GetFrameLevel() + 10)
     icon.texture = icon:CreateTexture(nil, "OVERLAY")
     icon.texture:SetAllPoints(icon)
-    icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- crop WoW icon border
+    icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     icon:Hide()
 
     return f, icon
@@ -146,39 +155,115 @@ local function PositionIcon(bar, icon)
 end
 
 ---------------------------------------------------------------------------
--- Overlay update
+-- Icon update
 ---------------------------------------------------------------------------
 
-local function UpdateOverlay(bar, remaining, total)
-    if not overlay or not iconFrame or total <= 0 then return end
+local function ShowIcon(bar, tex)
+    if not iconFrame or not tex then return end
+    iconFrame:Show()
+    iconFrame.texture:SetTexture(tex)
+    PositionIcon(bar, iconFrame)
+    local pulse = 1.0 + 0.15 * math.sin(GetTime() * 8)
+    iconFrame:SetScale(pulse)
+end
+
+local function HideIcon()
+    if iconFrame then iconFrame:Hide() end
+end
+
+---------------------------------------------------------------------------
+-- Overlay update (bar colour during twist window)
+---------------------------------------------------------------------------
+
+local function UpdateOverlay(bar, remaining)
+    if not overlay then return end
 
     local inTwist = remaining <= db.twistWindow and remaining > 0
+    local inTwistPhase = (phase == "twist")
 
-    if not inTwist then
+    if not inTwist and not inTwistPhase then
         overlay:Hide()
-        iconFrame:Hide()
         return
     end
 
-    -- Bar colour overlay
     overlay:Show()
     overlay.tex:ClearAllPoints()
     overlay.tex:SetAllPoints(bar)
-    local intensity = 1 - (remaining / db.twistWindow)  -- 0→1 as swing approaches
     local bc = db.barColor
-    overlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30 + 0.35 * intensity)
-
-    -- Next-seal icon
-    local nextSeal = GetNextSeal()
-    local iconTex  = GetSealIcon(nextSeal)
-    if iconTex then
-        iconFrame:Show()
-        iconFrame.texture:SetTexture(iconTex)
-        PositionIcon(bar, iconFrame)
-        local pulse = 1.0 + 0.15 * math.sin(GetTime() * 8)
-        iconFrame:SetScale(pulse)
+    if inTwist then
+        local intensity = 1 - (remaining / db.twistWindow)
+        overlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30 + 0.35 * intensity)
     else
-        iconFrame:Hide()
+        overlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Phase logic + icon update
+---------------------------------------------------------------------------
+
+local function UpdatePhase(bar, remaining)
+    -- PHASE: twist — finisher seal during pre-swing window
+    if phase == "twist" then
+        if remaining <= 0 then
+            -- Swing landed — move to judgement phase
+            swingLanded = true
+            if IsJudgementReady() then
+                phase = "judgement"
+                dbg("Phase: judgement")
+                ShowIcon(bar, GetJudgementIcon())
+            else
+                phase = "primary"
+                dbg("Phase: primary (no judgment)")
+                ShowIcon(bar, GetSealIcon(db.primarySeal))
+            end
+        else
+            ShowIcon(bar, GetSealIcon(db.finisherSeal))
+        end
+        return
+    end
+
+    -- PHASE: judgement — show Judgment icon after swing
+    if phase == "judgement" then
+        if IsJudgementReady() then
+            ShowIcon(bar, GetJudgementIcon())
+        else
+            -- Judgment was cast (went on CD) — transition to primary
+            phase = "primary"
+            dbg("Phase: primary")
+            ShowIcon(bar, GetSealIcon(db.primarySeal))
+        end
+        return
+    end
+
+    -- PHASE: primary — show primary seal icon (after Judgement, before next twist)
+    if phase == "primary" then
+        if activeSeal == db.primarySeal then
+            -- Primary seal is active — we're done, back to idle
+            phase = "idle"
+            dbg("Phase: idle")
+            HideIcon()
+        else
+            ShowIcon(bar, GetSealIcon(db.primarySeal))
+        end
+        return
+    end
+
+    -- PHASE: idle — decide whether to enter twist
+    if phase == "idle" then
+        if remaining <= db.twistWindow and remaining > 0 then
+            -- In twist window — only suggest finisher if Judgment is ready or nearly ready
+            if IsJudgementReady() or IsJudgementNearlyReady() then
+                phase = "twist"
+                dbg("Phase: twist (Judgment ready/nearly)")
+                ShowIcon(bar, GetSealIcon(db.finisherSeal))
+            else
+                -- Judgment not ready — no twist needed
+                HideIcon()
+            end
+        else
+            HideIcon()
+        end
     end
 end
 
@@ -189,7 +274,12 @@ end
 local function SwingTick(bar, elapsed)
     if not bar.min or not bar.max then return end
     local remaining = bar.max - GetTime()
-    UpdateOverlay(bar, remaining, bar.speed or 0)
+
+    -- Sync active seal
+    activeSeal = DetectActiveSeal()
+
+    UpdatePhase(bar, remaining)
+    UpdateOverlay(bar, remaining)
 end
 
 ---------------------------------------------------------------------------
@@ -274,8 +364,9 @@ f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15)
+f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
+        local arg1 = ...
         if arg1 == addonName then
             ElvUI_SealTwistDB = ElvUI_SealTwistDB or {}
             for k, v in pairs(DEFAULTS) do
@@ -296,7 +387,7 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
             local EP = E.Libs.EP
             if EP then
                 EP:RegisterPlugin(addonName, function()
-                    E.Options.args.epochSealTwist = {
+                    E.Options.args.sealTwist = {
                         order = 51,
                         type  = "group",
                         name  = "|cfff0a0d0Seal Twist|r",
@@ -307,46 +398,61 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
                             },
                             desc = {
                                 order = 2, type = "description",
-                                name  = "Swing bar overlay and next-seal icon.\n"
-                                      .. "Highlights the twist window on your swing bar and shows\n"
-                                      .. "which seal to cast next.",
+                                name  = "Judgment-CD based seal twisting.\n"
+                                      .. "Primary seal active → Finisher seal (twist window) → Swing → Judgment → Primary seal.",
                             },
                             version = {
                                 order = 3, type = "description",
-                                name  = "|cfff0a0d0Version 1.0.0|r",
+                                name  = "|cfff0a0d0Version 1.1.0|r",
                             },
                             spacer = { order = 4, type = "description", name = "" },
 
-                            -- Timing
-                            timingGroup = {
-                                order = 10, type = "group", name = "Timing", guiInline = true,
+                            -- Seals
+                            sealGroup = {
+                                order = 10, type = "group", name = "Seals", guiInline = true,
                                 args = {
-                                    twistWindow = {
-                                        order = 1, type = "range",
-                                        name  = "Twist Window",
-                                        desc  = "Seconds before the swing to show icon + bar colour.\n"
-                                              .. "Seal lingers 0.5s — 0.4s is the safe default.\n"
-                                              .. "0.6s adds reaction-time padding (you won't cast instantly).",
-                                        min = 0.30, max = 0.60, step = 0.05,
-                                        get = function() return db.twistWindow end,
-                                        set = function(_, v) db.twistWindow = v end,
+                                    primarySeal = {
+                                        order = 1, type = "input",
+                                        name  = "Primary Seal",
+                                        desc  = "The seal active most of the time (e.g. Seal of Command).",
+                                        get   = function() return db.primarySeal end,
+                                        set   = function(_, v) db.primarySeal = strtrim(v) end,
+                                    },
+                                    finisherSeal = {
+                                        order = 2, type = "input",
+                                        name  = "Finisher Seal",
+                                        desc  = "Cast during the twist window, right before the swing.\n"
+                                              .. "Only suggested when Judgment is off cooldown.",
+                                        get   = function() return db.finisherSeal end,
+                                        set   = function(_, v) db.finisherSeal = strtrim(v) end,
                                     },
                                 },
                             },
 
-                            -- Seal sequence
-                            sequence = {
-                                order = 20, type = "input",
-                                name  = "Seal Sequence",
-                                desc  = "Comma-separated seal names.\nDefault: Seal of Command,Seal of Righteousness",
-                                get   = function() return table.concat(db.sequence, ",") end,
-                                set   = function(_, v)
-                                    db.sequence = {}
-                                    for word in gmatch(v, "[^,]+") do
-                                        tinsert(db.sequence, strtrim(word))
-                                    end
-                                    currentSealIndex = 1
-                                end,
+                            -- Timing
+                            timingGroup = {
+                                order = 20, type = "group", name = "Timing", guiInline = true,
+                                args = {
+                                    twistWindow = {
+                                        order = 1, type = "range",
+                                        name  = "Twist Window",
+                                        desc  = "Seconds before the swing to cast the finisher seal.\n"
+                                              .. "Seal lingers 0.5s — 0.4s is the safe default.\n"
+                                              .. "0.6s adds reaction-time padding.",
+                                        min = 0.30, max = 0.60, step = 0.05,
+                                        get = function() return db.twistWindow end,
+                                        set = function(_, v) db.twistWindow = v end,
+                                    },
+                                    judgementCD = {
+                                        order = 2, type = "range",
+                                        name  = "Judgment Ready Window",
+                                        desc  = "Show the finisher seal when Judgment is within this many seconds of being ready.\n"
+                                              .. "Set to 0 to only twist when Judgment is fully off cooldown.",
+                                        min = 0, max = 3.0, step = 0.5,
+                                        get = function() return db.judgementCD end,
+                                        set = function(_, v) db.judgementCD = v end,
+                                    },
+                                },
                             },
 
                             -- Icon
@@ -396,7 +502,7 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
                                     barColor = {
                                         order = 1, type = "color",
                                         name  = "Twist Window Colour",
-                                        desc  = "Colour of the bar overlay and icon pulse during the twist window.",
+                                        desc  = "Colour of the bar overlay during the twist window.",
                                         hasAlpha = false,
                                         get = function() local c = db.barColor; return c.r, c.g, c.b end,
                                         set = function(_, r, g, b) db.barColor.r, db.barColor.g, db.barColor.b = r, g, b end,
@@ -418,7 +524,6 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
                                             db[k] = v
                                         end
                                     end
-                                    currentSealIndex = 1
                                 end,
                             },
                         },
@@ -442,6 +547,9 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
         hookedBar = nil
         overlay = nil
         iconFrame = nil
+        activeSeal = nil
+        phase = "idle"
+        swingLanded = false
         ScheduleTimer(0.5, function()
             ScanForBar()
             if not hookInstalled then ScanWithRetry() end
@@ -449,15 +557,30 @@ f:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5, arg6,
 
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         if not db then return end
-        -- 3.3.5: (timestamp, subEvent, hideCaster, sourceGUID, ...)
-        if arg2 ~= "SPELL_CAST_SUCCESS" then return end
-        if arg4 ~= UnitGUID("player") then return end
-        local spellName = arg13
-        if not spellName then return end
-        for j, sealName in ipairs(db.sequence) do
-            if spellName == sealName then
-                currentSealIndex = j
-                break
+        -- 3.3.5: (timestamp, subEvent, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
+        --         destGUID, destName, destFlags, destRaidFlags, ...)
+        local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, arg12, arg13 = ...
+        if sourceGUID ~= UnitGUID("player") then return end
+
+        if subEvent == "SPELL_CAST_SUCCESS" then
+            local spellName = arg13
+            if not spellName then return end
+
+            -- Seal cast — update active seal
+            if spellName == db.primarySeal then
+                activeSeal = db.primarySeal
+                dbg("Seal cast: " .. spellName)
+            elseif spellName == db.finisherSeal then
+                activeSeal = db.finisherSeal
+                dbg("Seal cast: " .. spellName)
+            end
+
+            -- Judgment cast — transition to primary phase
+            if spellName == "Judgement" then
+                if phase == "judgement" then
+                    phase = "primary"
+                    dbg("Judgment cast → primary phase")
+                end
             end
         end
     end

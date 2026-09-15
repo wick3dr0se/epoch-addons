@@ -1,6 +1,6 @@
 --[[
     ElvUI Damage Meter -- Minimal damage meter for Project Epoch
-    Uses ElvUI's mover system for positioning, ElvUI theme throughout.
+    Toggle via /dm or the button in the right chat panel.
 ]]
 
 local addonName, ns = ...
@@ -10,19 +10,17 @@ local addonName, ns = ...
 ---------------------------------------------------------------------------
 local E
 
+
 ---------------------------------------------------------------------------
--- Defaults — matches SwingBar pattern: no position, just visual
+-- Defaults
 ---------------------------------------------------------------------------
 local DEFAULTS = {
-    width         = 250,
-    height        = 200,
     rowHeight     = 18,
-    
     showDPS       = true,
     showHits      = true,
     sortBy        = "damage",
-    color         = { r = 0.85, g = 0.25, b = 0.25 },  -- pastel red
-    backdropColor = { r = 0.06, g = 0.06, b = 0.06, a = 0.8 },  -- ElvUI default
+    color         = { r = 0.85, g = 0.25, b = 0.25 },
+    backdropColor = { r = 0.06, g = 0.06, b = 0.06, a = 0.8 },
 }
 
 ---------------------------------------------------------------------------
@@ -34,6 +32,7 @@ local fightDamage = 0
 local fightStart  = 0
 local inCombat    = false
 local ui          = nil
+local toggleBtn   = nil
 
 ---------------------------------------------------------------------------
 -- Data
@@ -59,22 +58,8 @@ local function AddDamage(spellName, spellID, amount)
 end
 
 local function GetFightDuration()
-    return fightStart > 0 and (GetTime() - fightStart) or 0
-end
-
-local function GetSortedData()
-    local sorted = {}
-    for name, data in pairs(combatData) do
-        tinsert(sorted, {
-            name = name, damage = data.damage, hits = data.hits,
-            spellID = data.spellID,
-            avg = data.hits > 0 and (data.damage / data.hits) or 0,
-            dps = GetFightDuration() > 0 and (data.damage / GetFightDuration()) or 0,
-        })
-    end
-    local key = db.sortBy == "dps" and "dps" or "damage"
-    sort(sorted, function(a, b) return a[key] > b[key] end)
-    return sorted
+    if fightStart == 0 then return 0 end
+    return GetTime() - fightStart
 end
 
 local function Fmt(n)
@@ -84,12 +69,11 @@ local function Fmt(n)
 end
 
 ---------------------------------------------------------------------------
--- CLEU — 3.3.5 (no hideCaster, no sourceRaidFlags)
+-- CLEU
 ---------------------------------------------------------------------------
 
 local function HandleCLEU(...)
     if not db then return end
-
     local playerGUID = UnitGUID("player")
     if not playerGUID then return end
 
@@ -99,16 +83,13 @@ local function HandleCLEU(...)
     if sourceGUID ~= playerGUID then return end
 
     if subEvent == "SPELL_DAMAGE" or subEvent == "SPELL_PERIODIC_DAMAGE" then
-        -- pos 9=spellID, 10=spellName, 11=school, 12=amount
         local spellID = select(9, ...)
         local spellName = select(10, ...)
         local amount = select(12, ...)
         if spellName and amount then
             AddDamage(spellName, spellID, amount)
         end
-
     elseif subEvent == "SWING_DAMAGE" then
-        -- pos 9=amount
         local amount = select(9, ...)
         if amount and amount > 0 then
             AddDamage("Melee", nil, amount)
@@ -117,30 +98,56 @@ local function HandleCLEU(...)
 end
 
 ---------------------------------------------------------------------------
--- Spell icon helper
+-- UI
 ---------------------------------------------------------------------------
 
-local function GetSpellIcon(name, spellID)
-    if name == "Melee" then return "Interface\\Icons\\INV_Sword_04" end
-    -- Try by name first
-    if name and type(name) == "string" then
-        local _, _, icon = GetSpellInfo(name)
-        if icon then return icon end
+local function GetSortedData()
+    local t = {}
+    for name, d in pairs(combatData) do
+        local dur = GetFightDuration()
+        t[#t + 1] = {
+            name = name, damage = d.damage, hits = d.hits,
+            dps = dur > 0 and d.damage / dur or 0, spellID = d.spellID,
+        }
     end
-    -- Try by spellID
+    if db.sortBy == "dps" then
+        table.sort(t, function(a, b) return a.dps > b.dps end)
+    else
+        table.sort(t, function(a, b) return a.damage > b.damage end)
+    end
+    return t
+end
+
+local function GetSpellIcon(name, spellID)
+    if name == "Melee" then local _, _, icon = GetSpellInfo(6603); return icon or "Interface\\Icons\\INV_Sword_04" end
     if spellID then
         local _, _, icon = GetSpellInfo(spellID)
+        if icon then return icon end
+    end
+    if name and type(name) == "string" then
+        local _, _, icon = GetSpellInfo(name)
         if icon then return icon end
     end
     return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
----------------------------------------------------------------------------
--- UI
----------------------------------------------------------------------------
+local function GetSpellColor(name)
+    if not name then return 0.6, 0.6, 0.6 end
+    if name == "Melee" then return 1, 1, 1 end
+    local _, _, _, _, _, _, _, _, _, _, school = GetSpellInfo(name)
+    if not school then return 0.6, 0.6, 0.6 end
+    if bit.band(school, 0x04) > 0 then return 1, 0.5, 0.25 end
+    if bit.band(school, 0x02) > 0 then return 0.33, 0.6, 1 end
+    if bit.band(school, 0x08) > 0 then return 0.15, 0.75, 0.15 end
+    if bit.band(school, 0x20) > 0 then return 0.65, 0.15, 0.95 end
+    if bit.band(school, 0x40) > 0 then return 1, 1, 0.5 end
+    return 0.6, 0.6, 0.6
+end
 
 local function CreateRow(parent, index)
     local rh = db.rowHeight
+    local font = E.media.normFont
+
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(rh)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * rh)
@@ -159,7 +166,7 @@ local function CreateRow(parent, index)
     row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    -- Status bar
+    -- Status bar (right of icon, not covering it)
     row.bar = CreateFrame("StatusBar", nil, row)
     row.bar:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 2, -1)
     row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -150, 1)
@@ -173,8 +180,7 @@ local function CreateRow(parent, index)
     row.barBg:SetTexture(E.media.blankTex)
     row.barBg:SetVertexColor(0, 0, 0, 0.3)
 
-    local font = E.media.normFont
-
+    -- Text (OVERLAY = above everything)
     row.nameText = row:CreateFontString(nil, "OVERLAY")
     row.nameText:SetFont(font, 10)
     row.nameText:SetTextColor(0.85, 0.85, 0.85)
@@ -199,27 +205,19 @@ local function CreateRow(parent, index)
 
     row.hitsText = row:CreateFontString(nil, "OVERLAY")
     row.hitsText:SetFont(font, 9)
-    row.hitsText:SetTextColor(0.5, 0.5, 0.5)
-    row.hitsText:SetPoint("RIGHT", row.dpsText, "LEFT", -4, 0)
+    row.hitsText:SetTextColor(0.6, 0.6, 0.6)
+    row.hitsText:SetPoint("RIGHT", row.dpsText, "LEFT", -2, 0)
     row.hitsText:SetWidth(35)
     row.hitsText:SetJustifyH("RIGHT")
 
     row.pctText = row:CreateFontString(nil, "OVERLAY")
     row.pctText:SetFont(font, 9)
     row.pctText:SetTextColor(0.5, 0.5, 0.5)
-    row.pctText:SetPoint("RIGHT", row.hitsText, "LEFT", -4, 0)
+    row.pctText:SetPoint("RIGHT", row.hitsText, "LEFT", -2, 0)
     row.pctText:SetWidth(35)
     row.pctText:SetJustifyH("RIGHT")
 
-    row:Hide()
     return row
-end
-
-local function GetSpellColor(name)
-    if name == "Melee" then return 0.75, 0.75, 0.75 end
-    if type(name) == "string" and string.find(name, "Seal of") then return 1.0, 0.85, 0.2 end
-    if type(name) == "string" and string.find(name, "Judgement") then return 0.8, 0.6, 0.2 end
-    return db.color.r, db.color.g, db.color.b
 end
 
 local function UpdateUI()
@@ -229,13 +227,14 @@ local function UpdateUI()
     local maxDmg = sorted[1] and sorted[1].damage or 1
     local dur = GetFightDuration()
 
-    ui.titleText:SetText(E.media.hexvaluecolor .. "Damage Meter|r")
+    ui.titleText:SetText("Damage Meter")
     local s = Fmt(fightDamage) .. " total"
     if dur > 0 then s = s .. "  |  " .. Fmt(fightDamage / dur) .. "/s" end
     s = s .. "  |  " .. string.format("%.1fs", dur)
     ui.summaryText:SetText(s)
 
-    local visibleRows = math.min(#sorted, math.floor((db.height - 46) / db.rowHeight))
+    local panelHeight = ui:GetHeight() or 200
+    local visibleRows = math.min(#sorted, math.floor((panelHeight - 46) / db.rowHeight))
 
     for i = 1, visibleRows do
         local data = sorted[i]
@@ -246,7 +245,6 @@ local function UpdateUI()
         end
         row:Show()
 
-        -- Icon
         row.icon:SetTexture(GetSpellIcon(data.name, data.spellID))
 
         local nameStr = tostring(data.name)
@@ -262,32 +260,45 @@ local function UpdateUI()
         if db.showDPS then
             row.dpsText:SetText(Fmt(data.dps) .. "/s")
             row.dpsText:Show()
-        else row.dpsText:Hide() end
+        else
+            row.dpsText:Hide()
+        end
 
         if db.showHits then
             row.hitsText:SetText(data.hits .. "x")
             row.hitsText:Show()
-        else row.hitsText:Hide() end
+        else
+            row.hitsText:Hide()
+        end
 
-        local pct = fightDamage > 0 and (data.damage / fightDamage * 100) or 0
-        row.pctText:SetText(string.format("%.0f%%", pct))
+        if fightDamage > 0 then
+            row.pctText:SetText(string.format("%.0f%%", data.damage / fightDamage * 100))
+        else
+            row.pctText:SetText("0%")
+        end
     end
 
     for i = visibleRows + 1, #ui.rows do
         ui.rows[i]:Hide()
     end
+
+    if ui.scrollChild then
+        ui.scrollChild:SetSize(ui:GetWidth() or 250, visibleRows * db.rowHeight)
+    end
 end
+
+---------------------------------------------------------------------------
+-- UI creation
+---------------------------------------------------------------------------
 
 local function BuildContent(parent)
     local f = CreateFrame("Frame", "ElvUI_DamageMeter", parent)
     f:SetAllPoints(parent)
     f:SetFrameStrata("HIGH")
 
-    -- ElvUI backdrop
     f:CreateBackdrop("Default")
     f.backdrop:SetBackdropColor(db.backdropColor.r, db.backdropColor.g, db.backdropColor.b, db.backdropColor.a)
 
-    -- Title bar
     f.titleBar = CreateFrame("Frame", nil, f)
     f.titleBar:SetHeight(20)
     f.titleBar:SetPoint("TOPLEFT", f.backdrop, "TOPLEFT", E.Border, -E.Border)
@@ -302,12 +313,12 @@ local function BuildContent(parent)
 
     f.titleText = f.titleBar:CreateFontString(nil, "OVERLAY")
     f.titleText:SetFont(E.media.normFont, 10)
-    f.titleText:SetTextColor(0.8, 0.8, 0.8)
+    f.titleText:SetTextColor(1, 1, 1)
     f.titleText:SetPoint("LEFT", f.titleBar, "LEFT", 4, 0)
 
     f.summaryText = f.titleBar:CreateFontString(nil, "OVERLAY")
     f.summaryText:SetFont(E.media.normFont, 9)
-    f.summaryText:SetTextColor(0.5, 0.5, 0.5)
+    f.summaryText:SetTextColor(0.8, 0.8, 0.8)
     f.summaryText:SetPoint("RIGHT", f.titleBar, "RIGHT", -22, 0)
 
     f.closeBtn = CreateFrame("Button", nil, f.titleBar)
@@ -325,15 +336,13 @@ local function BuildContent(parent)
     end)
     f.closeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Scroll
     f.scroll = CreateFrame("ScrollFrame", nil, f)
     f.scroll:SetPoint("TOPLEFT", f.titleBar, "BOTTOMLEFT", 0, -1)
     f.scroll:SetPoint("BOTTOMRIGHT", f.backdrop, "BOTTOMRIGHT", -E.Border, E.Border)
 
     f.scrollChild = CreateFrame("Frame", nil, f.scroll)
-    f.scrollChild:SetSize(db.width - (E.Border * 2), db.height - 46)
+    f.scrollChild:SetSize(1, 1)
     f.scroll:SetScrollChild(f.scrollChild)
-
 
     f.rows = {}
     f:Hide()
@@ -343,20 +352,52 @@ end
 
 local function CreateUI()
     if ui then return ui end
+    if not RightChatPanel then return nil end
 
-    -- Holder for ElvUI mover — created once, persists
-    if not ElvUI_DamageMeterHolder then
-        local holder = CreateFrame("Frame", "ElvUI_DamageMeterHolder", UIParent)
-        holder:SetSize(db.width, db.height)
-        holder:SetPoint("CENTER", UIParent, "CENTER", 200, 0)
-        holder:SetClampedToScreen(true)
-        E:CreateMover(holder, "ElvUI_DamageMeterMover", "Damage Meter", nil, -4, nil, "ALL,GENERAL")
+    ui = BuildContent(RightChatPanel)
+    return ui
+end
+
+local function ToggleMeter()
+    if not ui then CreateUI() end
+    if not ui then return end
+
+    if ui:IsShown() then
+        ui:Hide()
     else
-        ElvUI_DamageMeterHolder:SetSize(db.width, db.height)
+        ui:Show()
+        UpdateUI()
     end
 
-    ui = BuildContent(ElvUI_DamageMeterHolder)
-    return ui
+    if toggleBtn then
+        toggleBtn:SetAlpha(ui:IsShown() and 1 or 0.5)
+    end
+end
+
+local function CreateToggleButton()
+    if toggleBtn then return end
+    if not RightChatDataPanel then return end
+
+    local btn = CreateFrame("Button", "ElvUI_DamageMeterToggle", RightChatDataPanel)
+    btn:SetSize(24, 24)
+    btn:SetPoint("BOTTOMLEFT", RightChatPanel, "BOTTOMLEFT", -30, 4)
+    btn:SetFrameStrata("HIGH")
+
+    btn.icon = btn:CreateTexture(nil, "OVERLAY")
+    btn.icon:SetAllPoints()
+    btn.icon:SetTexture("Interface\\Icons\\Ability_Warrior_Innerrage")
+    btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    btn:SetScript("OnClick", function() ToggleMeter() end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Toggle Damage Meter")
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    btn:SetAlpha(0.5)
+    toggleBtn = btn
 end
 
 ---------------------------------------------------------------------------
@@ -411,10 +452,15 @@ f:SetScript("OnEvent", function(self, event, arg1)
             if inCombat and ui and ui:IsShown() then UpdateUI() end
         end)
 
-        -- Show meter by default
-        CreateUI()
-        ui:Show()
-        UpdateUI()
+        -- Create UI and toggle button after a delay
+        CreateFrame("Frame"):SetScript("OnUpdate", function(self)
+            if RightChatPanel and RightChatPanel:GetWidth() > 0 then
+                self:SetScript("OnUpdate", nil)
+                CreateUI()
+                CreateToggleButton()
+                UpdateUI()
+            end
+        end)
 
         -- ElvUI plugin
         local EP = E.Libs.EP
@@ -426,23 +472,10 @@ f:SetScript("OnEvent", function(self, event, arg1)
                     args = {
                         header = { order = 1, type = "header", name = "|cffd94545Damage Meter|r" },
                         desc = { order = 2, type = "description",
-                            name = "Minimal damage meter.\nTracks damage per spell with DPS, hit count, and averages." },
-                        version = { order = 3, type = "description", name = "|cffd94545Version 1.0.0|r" },
+                            name = "Minimal damage meter.\\nTracks damage per spell with DPS, hit count, and averages." },
+                        version = { order = 3, type = "description", name = "|cffd94545Version 1.1.0|r" },
                         spacer = { order = 4, type = "description", name = "" },
 
-                        -- Visual settings (no position — ElvUI mover handles that)
-                        width = {
-                            order = 10, type = "range", name = "Width",
-                            min = 180, max = 500, step = 10,
-                            get = function() return db.width end,
-                            set = function(_, v) db.width = v; if ElvUI_DamageMeterHolder then ElvUI_DamageMeterHolder:SetWidth(v) end; if ui then ui:Hide(); ui = nil; CreateUI(); ui:Show(); UpdateUI() end end,
-                        },
-                        height = {
-                            order = 11, type = "range", name = "Height",
-                            min = 80, max = 500, step = 10,
-                            get = function() return db.height end,
-                            set = function(_, v) db.height = v; if ElvUI_DamageMeterHolder then ElvUI_DamageMeterHolder:SetHeight(v) end; if ui then ui:Hide(); ui = nil; CreateUI(); ui:Show(); UpdateUI() end end,
-                        },
                         rowHeight = {
                             order = 12, type = "range", name = "Row Height",
                             min = 14, max = 28, step = 1,
@@ -483,7 +516,6 @@ f:SetScript("OnEvent", function(self, event, arg1)
                         },
                         spacer4 = { order = 33, type = "description", name = "" },
 
-                        spacer5 = { order = 50, type = "description", name = "" },
                         restore = { order = 60, type = "execute", name = "Restore Defaults",
                             func = function()
                                 for k, v in pairs(DEFAULTS) do
@@ -494,16 +526,13 @@ f:SetScript("OnEvent", function(self, event, arg1)
                                         db[k] = v
                                     end
                                 end
-                                if ui then ui:SetSize(db.width, db.height) end
+                                if ui then UpdateUI() end
                             end },
                     } }
             end)
         end
 
         SLASH_DM1 = "/dm"
-        SlashCmdList["DM"] = function()
-            CreateUI()
-            if ui:IsShown() then ui:Hide() else ui:Show(); UpdateUI() end
-        end
+        SlashCmdList["DM"] = function() ToggleMeter() end
     end
 end)

@@ -21,6 +21,8 @@ local DEFAULTS = {
     sortBy        = "damage",
     color         = { r = 0.85, g = 0.25, b = 0.25 },
     backdropColor = { r = 0.06, g = 0.06, b = 0.06, a = 0.8 },
+    autoHide      = true,
+    autoHideDelay = 5,
 }
 
 ---------------------------------------------------------------------------
@@ -33,6 +35,7 @@ local fightStart  = 0
 local inCombat    = false
 local ui          = nil
 local toggleBtn   = nil
+local hideTimer   = 0
 
 ---------------------------------------------------------------------------
 -- Data
@@ -171,7 +174,6 @@ local function CreateRow(parent, index)
     row.bar:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 2, -1)
     row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -150, 1)
     row.bar:SetStatusBarTexture(E.media.normTex)
-    row.bar:SetStatusBarColor(db.color.r, db.color.g, db.color.b, 0.5)
     row.bar:SetMinMaxValues(0, 1)
     row.bar:SetValue(0)
 
@@ -361,6 +363,7 @@ end
 local function ToggleMeter()
     if not ui then CreateUI() end
     if not ui then return end
+    if db.autoHide then return end  -- Combat Tracking controls the meter
 
     if ui:IsShown() then
         ui:Hide()
@@ -368,7 +371,6 @@ local function ToggleMeter()
         ui:Show()
         UpdateUI()
     end
-
     if toggleBtn then
         toggleBtn:SetAlpha(ui:IsShown() and 1 or 0.5)
     end
@@ -439,17 +441,34 @@ f:SetScript("OnEvent", function(self, event, arg1)
         cf:SetScript("OnEvent", function(_, ev)
             if ev == "PLAYER_REGEN_DISABLED" then
                 inCombat = true
+                hideTimer = 0
+                if db.autoHide and ui then
+                    ui:Show()
+                    UpdateUI()
+                end
                 if fightStart == 0 then ResetData(); fightStart = GetTime() end
             elseif ev == "PLAYER_REGEN_ENABLED" then
                 inCombat = false
                 if ui and ui:IsShown() then UpdateUI() end
+                if db.autoHide and ui and ui:IsShown() then
+                    hideTimer = db.autoHideDelay
+                end
             elseif ev == "PLAYER_ENTERING_WORLD" then
                 ResetData()
+                hideTimer = 0
             end
         end)
 
-        CreateFrame("Frame"):SetScript("OnUpdate", function()
+        -- OnUpdate: refresh combat data + auto-hide timer
+        CreateFrame("Frame"):SetScript("OnUpdate", function(_, elapsed)
             if inCombat and ui and ui:IsShown() then UpdateUI() end
+            if db.autoHide and not inCombat and hideTimer > 0 and ui and ui:IsShown() then
+                hideTimer = hideTimer - elapsed
+                if hideTimer <= 0 then
+                    ui:Hide()
+                    hideTimer = 0
+                end
+            end
         end)
 
         -- Create UI and toggle button after a delay
@@ -457,7 +476,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
             if RightChatPanel and RightChatPanel:GetWidth() > 0 then
                 self:SetScript("OnUpdate", nil)
                 CreateUI()
-                CreateToggleButton()
+                if not db.autoHide then CreateToggleButton() end
                 UpdateUI()
             end
         end)
@@ -484,12 +503,6 @@ f:SetScript("OnEvent", function(self, event, arg1)
                         },
                         spacer2 = { order = 13, type = "description", name = "" },
 
-                        color = {
-                            order = 20, type = "color", name = "Accent Color",
-                            hasAlpha = false,
-                            get = function() local c = db.color; return c.r, c.g, c.b end,
-                            set = function(_, r, g, b) db.color.r, db.color.g, db.color.b = r, g, b end,
-                        },
                         backdropColor = {
                             order = 21, type = "color", name = "Backdrop Color",
                             hasAlpha = true,
@@ -516,6 +529,31 @@ f:SetScript("OnEvent", function(self, event, arg1)
                         },
                         spacer4 = { order = 33, type = "description", name = "" },
 
+                        autoHide = {
+                            order = 40, type = "toggle", name = "Combat Tracking",
+                            desc = "Show meter during combat, hide after leaving combat.\nShows again when entering combat.",
+                            get = function() return db.autoHide end,
+                            set = function(_, v)
+                                db.autoHide = v
+                                hideTimer = 0
+                                if v then
+                                    if toggleBtn then toggleBtn:Hide() end
+                                    if ui then ui:Hide() end
+                                else
+                                    if not toggleBtn then CreateToggleButton() end
+                                    if toggleBtn then toggleBtn:Show(); toggleBtn:SetAlpha(0.5) end
+                                    if ui then ui:Show(); UpdateUI() end
+                                end
+                            end,
+                        },
+                        autoHideDelay = {
+                            order = 41, type = "range",
+                            name  = "Hide Delay",
+                            desc  = "Seconds after leaving combat before hiding.",
+                            min = 5, max = 60, step = 5,
+                            get = function() return db.autoHideDelay end,
+                            set = function(_, v) db.autoHideDelay = v end,
+                        },
                         restore = { order = 60, type = "execute", name = "Restore Defaults",
                             func = function()
                                 for k, v in pairs(DEFAULTS) do
@@ -534,5 +572,6 @@ f:SetScript("OnEvent", function(self, event, arg1)
 
         SLASH_DM1 = "/dm"
         SlashCmdList["DM"] = function() ToggleMeter() end
+
     end
 end)

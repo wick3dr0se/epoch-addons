@@ -38,28 +38,36 @@ end)
 -- Defaults
 ---------------------------------------------------------------------------
 local DEFAULTS = {
-    twistWindow     = 0.40,   -- twist zone (seconds before swing; seal lingers 0.5s)
-    judgementCD     = 1.5,    -- show finisher when Judgment is within this many seconds of being ready
-    barColor        = { r = 1.0, g = 0.2, b = 0.1 },   -- red during twist window
-    iconSize        = 32,     -- icon size (pixels)
-    iconPosition    = "RIGHT", -- icon position: LEFT, RIGHT, TOP, BOTTOM
-    iconXOffset     = 8,      -- horizontal offset from bar edge
-    iconYOffset     = 0,      -- vertical offset from bar edge
-    primarySeal     = "Seal of Command",
-    finisherSeal    = "Seal of Righteousness",
+    twistWindow      = 0.40,
+    judgementCD      = 1.5,
+    showPrediction   = true,
+    predictionWindow = 0.60,
+    barColor         = { r = 1.0, g = 0.2, b = 0.1 },
+    judgementBarColor= { r = 1.0, g = 0.85, b = 0.0 },
+    sealIconSize     = 32,
+    sealIconPosition = "RIGHT",
+    sealIconXOffset  = 8,
+    sealIconYOffset  = 0,
+    judIconSize      = 32,
+    judIconPosition  = "RIGHT",
+    judIconXOffset   = 8,
+    judIconYOffset   = 0,
+    primarySeal      = "Seal of Command",
+    finisherSeal     = "Seal of Righteousness",
 }
 
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
 local db
-local overlay          = nil
-local iconFrame        = nil
-local hookedBar        = nil
-local hookInstalled    = false
-local activeSeal       = nil   -- which seal is currently buffed
-local phase            = "idle" -- "idle" | "twist" | "judgement" | "primary"
-local swingLanded      = false  -- true between swing landing and next OnUpdate
+local sealOverlay       = nil   -- red overlay during twist window
+local judOverlay        = nil   -- gold overlay during judgment window
+local sealIconFrame     = nil   -- seal icon
+local judIconFrame      = nil   -- judgment icon
+local hookedBar         = nil
+local hookInstalled     = false
+local activeSeal        = nil
+local judgementJustCast = false
 
 ---------------------------------------------------------------------------
 -- Debug
@@ -89,7 +97,7 @@ local function GetSealIcon(sealName)
 end
 
 local function GetJudgementCooldown()
-    local start, duration, enable = GetSpellCooldown("Judgement")
+    local start, duration = GetSpellCooldown("Judgement")
     if not start or start == 0 then return 0 end
     local remaining = (start + duration) - GetTime()
     if remaining < 0 then remaining = 0 end
@@ -113,7 +121,7 @@ end
 -- UI creation
 ---------------------------------------------------------------------------
 
-local function CreateOverlay(bar)
+local function CreateOverlay(bar, name)
     local f = CreateFrame("Frame", nil, bar)
     f:SetFrameLevel(bar:GetFrameLevel() + 5)
     f.tex = f:CreateTexture(nil, "OVERLAY")
@@ -121,24 +129,21 @@ local function CreateOverlay(bar)
     f.tex:SetTexture(1, 1, 1, 1)
     f.tex:SetBlendMode("ADD")
     f:Hide()
-
-    local icon = CreateFrame("Frame", nil, bar)
-    icon:SetFrameLevel(bar:GetFrameLevel() + 10)
-    icon.texture = icon:CreateTexture(nil, "OVERLAY")
-    icon.texture:SetAllPoints(icon)
-    icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    icon:Hide()
-
-    return f, icon
+    return f
 end
 
-local function PositionIcon(bar, icon)
-    icon:ClearAllPoints()
-    local pos = db.iconPosition
-    local xOff = db.iconXOffset
-    local yOff = db.iconYOffset
-    local sz   = db.iconSize
+local function CreateIconFrame(bar, name)
+    local f = CreateFrame("Frame", nil, bar)
+    f:SetFrameLevel(bar:GetFrameLevel() + 10)
+    f.texture = f:CreateTexture(nil, "OVERLAY")
+    f.texture:SetAllPoints(f)
+    f.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    f:Hide()
+    return f
+end
 
+local function PositionIcon(bar, icon, pos, xOff, yOff, sz)
+    icon:ClearAllPoints()
     icon:SetSize(sz, sz)
 
     if pos == "LEFT" then
@@ -154,132 +159,123 @@ local function PositionIcon(bar, icon)
     end
 end
 
----------------------------------------------------------------------------
--- Icon update
----------------------------------------------------------------------------
-
-local function ShowIcon(bar, tex)
-    if not iconFrame or not tex then return end
-    iconFrame:Show()
-    iconFrame.texture:SetTexture(tex)
-    PositionIcon(bar, iconFrame)
+local function ShowSealIcon(bar, tex)
+    if not sealIconFrame or not tex then return end
+    sealIconFrame:Show()
+    sealIconFrame:SetAlpha(1.0)
+    sealIconFrame.texture:SetTexture(tex)
+    PositionIcon(bar, sealIconFrame, db.sealIconPosition, db.sealIconXOffset, db.sealIconYOffset, db.sealIconSize)
     local pulse = 1.0 + 0.15 * math.sin(GetTime() * 8)
-    iconFrame:SetScale(pulse)
+    sealIconFrame:SetScale(pulse)
 end
 
-local function HideIcon()
-    if iconFrame then iconFrame:Hide() end
+local function ShowSealIconDimmed(bar, tex)
+    if not sealIconFrame or not tex then return end
+    sealIconFrame:Show()
+    sealIconFrame:SetAlpha(0.35)
+    sealIconFrame.texture:SetTexture(tex)
+    PositionIcon(bar, sealIconFrame, db.sealIconPosition, db.sealIconXOffset, db.sealIconYOffset, db.sealIconSize)
+    sealIconFrame:SetScale(1.0)
 end
 
----------------------------------------------------------------------------
--- Overlay update (bar colour during twist window)
----------------------------------------------------------------------------
-
-local function UpdateOverlay(bar, remaining)
-    if not overlay then return end
-
-    local inTwist = remaining <= db.twistWindow and remaining > 0
-    local inTwistPhase = (phase == "twist")
-
-    if not inTwist and not inTwistPhase then
-        overlay:Hide()
-        return
-    end
-
-    overlay:Show()
-    overlay.tex:ClearAllPoints()
-    overlay.tex:SetAllPoints(bar)
-    local bc = db.barColor
-    if inTwist then
-        local intensity = 1 - (remaining / db.twistWindow)
-        overlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30 + 0.35 * intensity)
+local function ShowJudIcon(bar, tex, dimmed)
+    if not judIconFrame or not tex then return end
+    judIconFrame:Show()
+    judIconFrame.texture:SetTexture(tex)
+    PositionIcon(bar, judIconFrame, db.judIconPosition, db.judIconXOffset, db.judIconYOffset, db.judIconSize)
+    if dimmed then
+        judIconFrame:SetAlpha(0.4)
+        judIconFrame:SetScale(1.0)
     else
-        overlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30)
+        judIconFrame:SetAlpha(1.0)
+        local pulse = 1.0 + 0.15 * math.sin(GetTime() * 8)
+        judIconFrame:SetScale(pulse)
     end
 end
 
----------------------------------------------------------------------------
--- Phase logic + icon update
----------------------------------------------------------------------------
-
-local function UpdatePhase(bar, remaining)
-    -- PHASE: twist — finisher seal during pre-swing window
-    if phase == "twist" then
-        if remaining <= 0 then
-            -- Swing landed — move to judgement phase
-            swingLanded = true
-            if IsJudgementReady() then
-                phase = "judgement"
-                dbg("Phase: judgement")
-                ShowIcon(bar, GetJudgementIcon())
-            else
-                phase = "primary"
-                dbg("Phase: primary (no judgment)")
-                ShowIcon(bar, GetSealIcon(db.primarySeal))
-            end
-        else
-            ShowIcon(bar, GetSealIcon(db.finisherSeal))
-        end
-        return
-    end
-
-    -- PHASE: judgement — show Judgment icon after swing
-    if phase == "judgement" then
-        if IsJudgementReady() then
-            ShowIcon(bar, GetJudgementIcon())
-        else
-            -- Judgment was cast (went on CD) — transition to primary
-            phase = "primary"
-            dbg("Phase: primary")
-            ShowIcon(bar, GetSealIcon(db.primarySeal))
-        end
-        return
-    end
-
-    -- PHASE: primary — show primary seal icon (after Judgement, before next twist)
-    if phase == "primary" then
-        if activeSeal == db.primarySeal then
-            -- Primary seal is active — we're done, back to idle
-            phase = "idle"
-            dbg("Phase: idle")
-            HideIcon()
-        else
-            ShowIcon(bar, GetSealIcon(db.primarySeal))
-        end
-        return
-    end
-
-    -- PHASE: idle — decide whether to enter twist
-    if phase == "idle" then
-        if remaining <= db.twistWindow and remaining > 0 then
-            -- In twist window — only suggest finisher if Judgment is ready or nearly ready
-            if IsJudgementReady() or IsJudgementNearlyReady() then
-                phase = "twist"
-                dbg("Phase: twist (Judgment ready/nearly)")
-                ShowIcon(bar, GetSealIcon(db.finisherSeal))
-            else
-                -- Judgment not ready — no twist needed
-                HideIcon()
-            end
-        else
-            HideIcon()
-        end
-    end
+local function HideAllIcons()
+    if sealIconFrame then sealIconFrame:Hide() end
+    if judIconFrame then judIconFrame:Hide() end
 end
 
 ---------------------------------------------------------------------------
--- OnUpdate tick
+-- OnUpdate tick — the core logic
 ---------------------------------------------------------------------------
 
 local function SwingTick(bar, elapsed)
     if not bar.min or not bar.max then return end
     local remaining = bar.max - GetTime()
 
-    -- Sync active seal
     activeSeal = DetectActiveSeal()
+    if not activeSeal and ns._cleuSeal then
+        activeSeal = ns._cleuSeal
+    end
 
-    UpdatePhase(bar, remaining)
-    UpdateOverlay(bar, remaining)
+    local inTwistWindow = remaining > 0 and remaining <= db.twistWindow
+    local inPrediction = db.showPrediction and remaining > db.twistWindow and remaining <= (db.twistWindow + db.predictionWindow)
+    local judReady = IsJudgementReady()
+
+    -- Seal colour overlay (twist window)
+    if inTwistWindow then
+        sealOverlay:Show()
+        sealOverlay.tex:ClearAllPoints()
+        sealOverlay.tex:SetAllPoints(bar)
+        local bc = db.barColor
+        local intensity = 1 - (remaining / db.twistWindow)
+        sealOverlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.30 + 0.35 * intensity)
+    else
+        sealOverlay:Hide()
+    end
+
+    -- Judgment colour overlay (when finisher seal active + Judgment ready)
+    local finisherActive = (activeSeal == db.finisherSeal)
+    if finisherActive and judReady then
+        judOverlay:Show()
+        judOverlay.tex:ClearAllPoints()
+        judOverlay.tex:SetAllPoints(bar)
+        local bc = db.judgementBarColor
+        judOverlay.tex:SetVertexColor(bc.r, bc.g, bc.b, 0.35 + 0.20 * math.sin(GetTime() * 6))
+    else
+        judOverlay:Hide()
+    end
+
+    -- Icon logic
+    HideAllIcons()
+
+    if judgementJustCast then
+        -- After Judgment — suggest primary seal until it's active
+        if activeSeal == db.primarySeal then
+            judgementJustCast = false
+        else
+            ShowSealIcon(bar, GetSealIcon(db.primarySeal))
+        end
+    elseif not activeSeal then
+        -- No seal active — suggest primary seal
+        ShowSealIcon(bar, GetSealIcon(db.primarySeal))
+    elseif inTwistWindow then
+        -- Twist window
+        if judReady or IsJudgementNearlyReady() then
+            -- Judgment ready — suggest finisher seal
+            local iconTex = GetSealIcon(db.finisherSeal)
+            if iconTex then
+                ShowSealIcon(bar, iconTex)
+            else
+                ShowJudIcon(bar, GetJudgementIcon(), false)
+            end
+        else
+            -- Judgment on CD — show dimmed Judgment as "charging" indicator
+            ShowJudIcon(bar, GetJudgementIcon(), true)
+        end
+    elseif inPrediction and activeSeal == db.primarySeal then
+        -- Prediction window — show dimmed finisher seal as "get ready" indicator
+        local iconTex = GetSealIcon(db.finisherSeal)
+        if iconTex then
+            ShowSealIconDimmed(bar, iconTex)
+        end
+    elseif finisherActive and judReady then
+        -- Finisher seal active + Judgment ready — suggest Judgment
+        ShowJudIcon(bar, GetJudgementIcon(), false)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -291,7 +287,10 @@ local function InstallHook(bar)
     hookInstalled = true
     hookedBar = bar
 
-    overlay, iconFrame = CreateOverlay(bar)
+    sealOverlay = CreateOverlay(bar, "SealTwistSealOverlay")
+    judOverlay = CreateOverlay(bar, "SealTwistJudOverlay")
+    sealIconFrame = CreateIconFrame(bar, "SealTwistSealIcon")
+    judIconFrame = CreateIconFrame(bar, "SealTwistJudIcon")
     dbg("Hook installed on " .. tostring(bar:GetName()))
 
     local lastHandler = nil
@@ -399,11 +398,11 @@ f:SetScript("OnEvent", function(self, event, ...)
                             desc = {
                                 order = 2, type = "description",
                                 name  = "Judgment-CD based seal twisting.\n"
-                                      .. "Primary seal active → Finisher seal (twist window) → Swing → Judgment → Primary seal.",
+                                      .. "Primary seal → Finisher seal (twist) → Swing → Judgment → Primary seal.",
                             },
                             version = {
                                 order = 3, type = "description",
-                                name  = "|cfff0a0d0Version 1.1.0|r",
+                                name  = "|cfff0a0d0Version 1.3.0|r",
                             },
                             spacer = { order = 4, type = "description", name = "" },
 
@@ -437,8 +436,7 @@ f:SetScript("OnEvent", function(self, event, ...)
                                         order = 1, type = "range",
                                         name  = "Twist Window",
                                         desc  = "Seconds before the swing to cast the finisher seal.\n"
-                                              .. "Seal lingers 0.5s — 0.4s is the safe default.\n"
-                                              .. "0.6s adds reaction-time padding.",
+                                              .. "Seal lingers 0.5s — 0.4s is the safe default.",
                                         min = 0.30, max = 0.60, step = 0.05,
                                         get = function() return db.twistWindow end,
                                         set = function(_, v) db.twistWindow = v end,
@@ -446,27 +444,43 @@ f:SetScript("OnEvent", function(self, event, ...)
                                     judgementCD = {
                                         order = 2, type = "range",
                                         name  = "Judgment Ready Window",
-                                        desc  = "Show the finisher seal when Judgment is within this many seconds of being ready.\n"
-                                              .. "Set to 0 to only twist when Judgment is fully off cooldown.",
+                                        desc  = "Show the finisher seal when Judgment is within this many seconds of being ready.",
                                         min = 0, max = 3.0, step = 0.5,
                                         get = function() return db.judgementCD end,
                                         set = function(_, v) db.judgementCD = v end,
                                     },
+                                    showPrediction = {
+                                        order = 3, type = "toggle",
+                                        name  = "Show Prediction",
+                                        desc  = "Show a dimmed finisher seal icon before the twist window\n"
+                                              .. "as a \"get ready\" indicator.",
+                                        get = function() return db.showPrediction end,
+                                        set = function(_, v) db.showPrediction = v end,
+                                    },
+                                    predictionWindow = {
+                                        order = 4, type = "range",
+                                        name  = "Prediction Window",
+                                        desc  = "Seconds before the twist window to show the dimmed finisher icon.\n"
+                                              .. "0.6s means the icon appears 0.6s before the twist window starts.",
+                                        min = 0.20, max = 1.50, step = 0.10,
+                                        get = function() return db.predictionWindow end,
+                                        set = function(_, v) db.predictionWindow = v end,
+                                    },
                                 },
                             },
 
-                            -- Icon
-                            iconGroup = {
-                                order = 30, type = "group", name = "Icon", guiInline = true,
+                            -- Seal Icon
+                            sealIconGroup = {
+                                order = 30, type = "group", name = "Seal Icon", guiInline = true,
                                 args = {
-                                    iconSize = {
+                                    sealIconSize = {
                                         order = 1, type = "range",
                                         name  = "Size",
                                         min = 16, max = 64, step = 2,
-                                        get = function() return db.iconSize end,
-                                        set = function(_, v) db.iconSize = v end,
+                                        get = function() return db.sealIconSize end,
+                                        set = function(_, v) db.sealIconSize = v end,
                                     },
-                                    iconPosition = {
+                                    sealIconPosition = {
                                         order = 2, type = "select",
                                         name  = "Position",
                                         values = {
@@ -475,22 +489,62 @@ f:SetScript("OnEvent", function(self, event, ...)
                                             TOP = "Above bar",
                                             BOTTOM = "Below bar",
                                         },
-                                        get = function() return db.iconPosition end,
-                                        set = function(_, v) db.iconPosition = v end,
+                                        get = function() return db.sealIconPosition end,
+                                        set = function(_, v) db.sealIconPosition = v end,
                                     },
-                                    iconXOffset = {
+                                    sealIconXOffset = {
                                         order = 3, type = "range",
                                         name  = "X Offset",
                                         min = -50, max = 50, step = 1,
-                                        get = function() return db.iconXOffset end,
-                                        set = function(_, v) db.iconXOffset = v end,
+                                        get = function() return db.sealIconXOffset end,
+                                        set = function(_, v) db.sealIconXOffset = v end,
                                     },
-                                    iconYOffset = {
+                                    sealIconYOffset = {
                                         order = 4, type = "range",
                                         name  = "Y Offset",
                                         min = -50, max = 50, step = 1,
-                                        get = function() return db.iconYOffset end,
-                                        set = function(_, v) db.iconYOffset = v end,
+                                        get = function() return db.sealIconYOffset end,
+                                        set = function(_, v) db.sealIconYOffset = v end,
+                                    },
+                                },
+                            },
+
+                            -- Judgment Icon
+                            judIconGroup = {
+                                order = 35, type = "group", name = "Judgment Icon", guiInline = true,
+                                args = {
+                                    judIconSize = {
+                                        order = 1, type = "range",
+                                        name  = "Size",
+                                        min = 16, max = 64, step = 2,
+                                        get = function() return db.judIconSize end,
+                                        set = function(_, v) db.judIconSize = v end,
+                                    },
+                                    judIconPosition = {
+                                        order = 2, type = "select",
+                                        name  = "Position",
+                                        values = {
+                                            LEFT = "Left of bar",
+                                            RIGHT = "Right of bar",
+                                            TOP = "Above bar",
+                                            BOTTOM = "Below bar",
+                                        },
+                                        get = function() return db.judIconPosition end,
+                                        set = function(_, v) db.judIconPosition = v end,
+                                    },
+                                    judIconXOffset = {
+                                        order = 3, type = "range",
+                                        name  = "X Offset",
+                                        min = -50, max = 50, step = 1,
+                                        get = function() return db.judIconXOffset end,
+                                        set = function(_, v) db.judIconXOffset = v end,
+                                    },
+                                    judIconYOffset = {
+                                        order = 4, type = "range",
+                                        name  = "Y Offset",
+                                        min = -50, max = 50, step = 1,
+                                        get = function() return db.judIconYOffset end,
+                                        set = function(_, v) db.judIconYOffset = v end,
                                     },
                                 },
                             },
@@ -506,6 +560,14 @@ f:SetScript("OnEvent", function(self, event, ...)
                                         hasAlpha = false,
                                         get = function() local c = db.barColor; return c.r, c.g, c.b end,
                                         set = function(_, r, g, b) db.barColor.r, db.barColor.g, db.barColor.b = r, g, b end,
+                                    },
+                                    judgementBarColor = {
+                                        order = 2, type = "color",
+                                        name  = "Judgment Window Colour",
+                                        desc  = "Colour of the bar overlay when Judgment is ready and finisher seal is active.",
+                                        hasAlpha = false,
+                                        get = function() local c = db.judgementBarColor; return c.r, c.g, c.b end,
+                                        set = function(_, r, g, b) db.judgementBarColor.r, db.judgementBarColor.g, db.judgementBarColor.b = r, g, b end,
                                     },
                                 },
                             },
@@ -545,11 +607,13 @@ f:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         hookInstalled = false
         hookedBar = nil
-        overlay = nil
-        iconFrame = nil
+        sealOverlay = nil
+        judOverlay = nil
+        sealIconFrame = nil
+        judIconFrame = nil
         activeSeal = nil
-        phase = "idle"
-        swingLanded = false
+        judgementJustCast = false
+        ns._cleuSeal = nil
         ScheduleTimer(0.5, function()
             ScanForBar()
             if not hookInstalled then ScanWithRetry() end
@@ -557,8 +621,6 @@ f:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         if not db then return end
-        -- 3.3.5: (timestamp, subEvent, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
-        --         destGUID, destName, destFlags, destRaidFlags, ...)
         local _, subEvent, _, sourceGUID, _, _, _, _, _, _, _, arg12, arg13 = ...
         if sourceGUID ~= UnitGUID("player") then return end
 
@@ -566,21 +628,15 @@ f:SetScript("OnEvent", function(self, event, ...)
             local spellName = arg13
             if not spellName then return end
 
-            -- Seal cast — update active seal
             if spellName == db.primarySeal then
-                activeSeal = db.primarySeal
-                dbg("Seal cast: " .. spellName)
+                ns._cleuSeal = db.primarySeal
             elseif spellName == db.finisherSeal then
-                activeSeal = db.finisherSeal
-                dbg("Seal cast: " .. spellName)
+                ns._cleuSeal = db.finisherSeal
             end
 
-            -- Judgment cast — transition to primary phase
             if spellName == "Judgement" then
-                if phase == "judgement" then
-                    phase = "primary"
-                    dbg("Judgment cast → primary phase")
-                end
+                judgementJustCast = true
+                dbg("Judgment cast → suggest primary seal")
             end
         end
     end

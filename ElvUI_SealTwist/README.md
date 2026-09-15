@@ -38,7 +38,9 @@ Open ElvUI settings, go to **Plugins > Seal Twist**.
 ### Timing
 
 - **Twist Window** (0.30-0.60s, default 0.40s) — how early to show the finisher seal. Seal lingers 0.5s; 0.4s is the safe default. Add padding if you react slowly.
-- **Judgment Ready Window** (0-3.0s, default 1.5s) — show the finisher seal when Judgment is within this many seconds of being ready. Set to 0 to only twist when Judgment is fully off cooldown.
+- **Judgment Ready Window** (0-3.0s, default 1.5s) — show the finisher seal when Judgment is within this many seconds of being ready.
+- **Show Prediction** (default: on) — show a dimmed finisher seal icon before the twist window as a "get ready" indicator.
+- **Prediction Window** (0.20-1.50s, default 0.60s) — how early to show the dimmed icon before the twist window starts.
 
 ### Icon
 
@@ -49,6 +51,7 @@ Open ElvUI settings, go to **Plugins > Seal Twist**.
 ### Colours
 
 - **Twist Window Colour** — colour of the bar overlay during the twist window
+- **Judgment Window Colour** — colour of the bar overlay when Judgment is ready and finisher seal is active
 
 ## Saved variables
 

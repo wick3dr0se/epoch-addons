@@ -23,7 +23,6 @@
 	<Script file="Help.lua"/>
 	<Script file="Inspect.lua"/>
 	<Script file="LFD.lua"/>
-	<Script file="LFR.lua"/>
 	<Script file="Loot.lua"/>
 	<Script file="Macro.lua"/>
 	<Script file="Mail.lua"/>

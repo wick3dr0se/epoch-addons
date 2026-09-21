@@ -83,7 +83,6 @@ V.skins = {
 		help = true,
 		inspect = true,
 		lfd = true,
-		lfr = true,
 		loot = true,
 		lootRoll = true,
 		macro = true,

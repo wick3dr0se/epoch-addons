@@ -134,6 +134,8 @@ function NP:StyleFrame(parent, noBackdrop, point)
 
 	if point.bordertop then return end
 
+	local borderR, borderG, borderB, borderA = unpack(E.media.bordercolor)
+
 	if not noBackdrop then
 		point.backdrop = parent:CreateTexture(nil, "BACKGROUND")
 		point.backdrop:SetAllPoints(point)
@@ -145,31 +147,31 @@ function NP:StyleFrame(parent, noBackdrop, point)
 		point.bordertop:SetPoint("TOPLEFT", point, "TOPLEFT", -noscalemult, noscalemult)
 		point.bordertop:SetPoint("TOPRIGHT", point, "TOPRIGHT", noscalemult, noscalemult)
 		point.bordertop:SetHeight(noscalemult)
-		point.bordertop:SetTexture(unpack(E.media.bordercolor))
+		point.bordertop:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderbottom = parent:CreateTexture()
 		point.borderbottom:SetPoint("BOTTOMLEFT", point, "BOTTOMLEFT", -noscalemult, -noscalemult)
 		point.borderbottom:SetPoint("BOTTOMRIGHT", point, "BOTTOMRIGHT", noscalemult, -noscalemult)
 		point.borderbottom:SetHeight(noscalemult)
-		point.borderbottom:SetTexture(unpack(E.media.bordercolor))
+		point.borderbottom:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderleft = parent:CreateTexture()
 		point.borderleft:SetPoint("TOPLEFT", point, "TOPLEFT", -noscalemult, noscalemult)
 		point.borderleft:SetPoint("BOTTOMLEFT", point, "BOTTOMLEFT", noscalemult, -noscalemult)
 		point.borderleft:SetWidth(noscalemult)
-		point.borderleft:SetTexture(unpack(E.media.bordercolor))
+		point.borderleft:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderright = parent:CreateTexture()
 		point.borderright:SetPoint("TOPRIGHT", point, "TOPRIGHT", noscalemult, noscalemult)
 		point.borderright:SetPoint("BOTTOMRIGHT", point, "BOTTOMRIGHT", -noscalemult, -noscalemult)
 		point.borderright:SetWidth(noscalemult)
-		point.borderright:SetTexture(unpack(E.media.bordercolor))
+		point.borderright:SetTexture(borderR, borderG, borderB, borderA)
 	else
 		point.bordertop = parent:CreateTexture(nil, "OVERLAY")
 		point.bordertop:SetPoint("TOPLEFT", point, "TOPLEFT", -noscalemult, noscalemult*2)
 		point.bordertop:SetPoint("TOPRIGHT", point, "TOPRIGHT", noscalemult, noscalemult*2)
 		point.bordertop:SetHeight(noscalemult)
-		point.bordertop:SetTexture(unpack(E.media.bordercolor))
+		point.bordertop:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.bordertop.backdrop = parent:CreateTexture()
 		point.bordertop.backdrop:SetPoint("TOPLEFT", point.bordertop, "TOPLEFT", noscalemult, noscalemult)
@@ -181,7 +183,7 @@ function NP:StyleFrame(parent, noBackdrop, point)
 		point.borderbottom:SetPoint("BOTTOMLEFT", point, "BOTTOMLEFT", -noscalemult, -noscalemult*2)
 		point.borderbottom:SetPoint("BOTTOMRIGHT", point, "BOTTOMRIGHT", noscalemult, -noscalemult*2)
 		point.borderbottom:SetHeight(noscalemult)
-		point.borderbottom:SetTexture(unpack(E.media.bordercolor))
+		point.borderbottom:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderbottom.backdrop = parent:CreateTexture()
 		point.borderbottom.backdrop:SetPoint("BOTTOMLEFT", point.borderbottom, "BOTTOMLEFT", noscalemult, -noscalemult)
@@ -193,7 +195,7 @@ function NP:StyleFrame(parent, noBackdrop, point)
 		point.borderleft:SetPoint("TOPLEFT", point, "TOPLEFT", -noscalemult*2, noscalemult*2)
 		point.borderleft:SetPoint("BOTTOMLEFT", point, "BOTTOMLEFT", noscalemult*2, -noscalemult*2)
 		point.borderleft:SetWidth(noscalemult)
-		point.borderleft:SetTexture(unpack(E.media.bordercolor))
+		point.borderleft:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderleft.backdrop = parent:CreateTexture()
 		point.borderleft.backdrop:SetPoint("TOPLEFT", point.borderleft, "TOPLEFT", -noscalemult, noscalemult)
@@ -205,11 +207,11 @@ function NP:StyleFrame(parent, noBackdrop, point)
 		point.borderright:SetPoint("TOPRIGHT", point, "TOPRIGHT", noscalemult*2, noscalemult*2)
 		point.borderright:SetPoint("BOTTOMRIGHT", point, "BOTTOMRIGHT", -noscalemult*2, -noscalemult*2)
 		point.borderright:SetWidth(noscalemult)
-		point.borderright:SetTexture(unpack(E.media.bordercolor))
+		point.borderright:SetTexture(borderR, borderG, borderB, borderA)
 
 		point.borderright.backdrop = parent:CreateTexture()
 		point.borderright.backdrop:SetPoint("TOPRIGHT", point.borderright, "TOPRIGHT", noscalemult, noscalemult)
-		point.borderright.backdrop:SetPoint("BOTTOMRIGHT", point.borderright, "BOTTOMRIGHT", noscalemult, -noscalemult)
+		point.borderright.backdrop:SetPoint("BOTTOMRIGHT", point.borderright, "BOTTOMRIGHT", -noscalemult, -noscalemult)
 		point.borderright.backdrop:SetWidth(noscalemult * 3)
 		point.borderright.backdrop:SetTexture(0, 0, 0)
 	end
@@ -877,33 +879,34 @@ function NP:OnUpdate(elapsed)
 		lastChildern = numChildren
 	end
 
+	plateUpdateElapsed = plateUpdateElapsed + (elapsed or 0)
+	local throttled = plateUpdateElapsed >= PLATE_UPDATE_INTERVAL
+	if throttled then plateUpdateElapsed = 0 end
+
 	for frame in pairs(NP.VisiblePlates) do
 		if hasTarget then
 			local parent = frame:GetParent()
-			frame.alpha = parent:GetAlpha()
-			parent:SetAlpha(1)
+			local alpha = parent:GetAlpha()
+			frame.alpha = alpha
+			if alpha ~= 1 then parent:SetAlpha(1) end
 		else
 			frame.alpha = 1
 		end
-	end
 
-	plateUpdateElapsed = plateUpdateElapsed + (elapsed or 0)
-	if plateUpdateElapsed < PLATE_UPDATE_INTERVAL then return end
-	plateUpdateElapsed = 0
+		if throttled then
+			NP:SetMouseoverFrame(frame)
+			NP:SetTargetFrame(frame)
 
-	for frame in pairs(NP.VisiblePlates) do
-		NP:SetMouseoverFrame(frame)
-		NP:SetTargetFrame(frame)
+			if frame.UnitReaction ~= NP:GetUnitInfo(frame) then
+				NP:UpdateAllFrame(frame, nil, true)
+			end
 
-		if frame.UnitReaction ~= NP:GetUnitInfo(frame) then
-			NP:UpdateAllFrame(frame, nil, true)
-		end
+			local status = NP:UnitDetailedThreatSituation(frame)
+			if frame.ThreatStatus ~= status then
+				frame.ThreatStatus = status
 
-		local status = NP:UnitDetailedThreatSituation(frame)
-		if frame.ThreatStatus ~= status then
-			frame.ThreatStatus = status
-
-			NP:Update_HealthColor(frame)
+				NP:Update_HealthColor(frame)
+			end
 		end
 	end
 end

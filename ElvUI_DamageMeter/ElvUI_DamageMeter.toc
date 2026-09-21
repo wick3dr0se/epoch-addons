@@ -2,7 +2,7 @@
 ## Title: |cff1784d1E|r|cffe5e3e3lvUI|r |cffd94545Damage|r |cffd94545Meter|r
 ## Notes: Minimal damage meter for Project Epoch
 ## Author: wick3dr0se
-## Version: 1.0.0
+## Version: 1.2.0
 ## SavedVariables: ElvUI_DamageMeterDB
 ## Dependencies: ElvUI
 

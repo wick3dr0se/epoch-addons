@@ -492,7 +492,7 @@ f:SetScript("OnEvent", function(self, event, arg1)
                         header = { order = 1, type = "header", name = "|cffd94545Damage Meter|r" },
                         desc = { order = 2, type = "description",
                             name = "Minimal damage meter.\\nTracks damage per spell with DPS, hit count, and averages." },
-                        version = { order = 3, type = "description", name = "|cffd94545Version 1.1.0|r" },
+                        version = { order = 3, type = "description", name = "|cffd94545Version 1.2.0|r" },
                         spacer = { order = 4, type = "description", name = "" },
 
                         rowHeight = {

@@ -8,7 +8,7 @@ Most will work with across WotLK but may be configured towards Epoch specifics (
 
 | Addon | Type | Description |
 |-------|------|-------------|
-| [ElvUI](ElvUI/) | UI replacement | Fork of ElvUI Epoch (v6.11) for 3.3.5a, slimmed down and tuned for performance. |
+| [ElvUI](ElvUI/) | UI replacement | Fork of [ElvUI-Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) (v6.11), stable/tested on Epoch. |
 | [ElvUI Seal Twist](ElvUI_SealTwist/) | ElvUI plugin | Paladin seal-twisting helper. Highlights the twist window on your swing bar and shows which seal to cast next. |
 | [ElvUI Damage Meter](ElvUI_DamageMeter/) | ElvUI plugin | Minimal damage meter. Tracks damage per spell with DPS, hit count, and averages. |
 

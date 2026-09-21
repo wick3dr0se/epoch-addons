@@ -1,0 +1,4 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- enUS is the registered fallback + only shipped locale (this is a personal 3.3.5 fork) -->
+	<Script file="enUS.lua"/>
+</Ui>

@@ -14,7 +14,7 @@ Minimal damage meter for WoW 3.3.5. Tracks damage per spell with DPS, hit count,
 
 ## Dependencies
 
-- [ElvUI](https://github.com/ElvUI-WotLK/ElvUI) -- ElvUI for WotLK 3.3.5
+- [ElvUI](../ElvUI/) -- forked from [ElvUI-Epoch](https://github.com/Bennylavaa/ElvUI-Epoch), stable/tested on Epoch
 
 ## Configuration
 

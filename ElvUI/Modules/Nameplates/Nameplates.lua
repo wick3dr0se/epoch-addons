@@ -852,13 +852,21 @@ local function findNewPlate(...)
 	end
 end
 
---Throttle the heavy per-plate pass. Plate discovery stays per-frame (one cheap C
---call) so new nameplates still appear instantly, but the per-plate work below
---(alpha, mouseover/target state, unit info, threat, glow) is polled at a fixed
---rate instead of once per rendered frame. This loop was the single biggest
---un-throttled CPU cost in nameplates (everything else in ElvUI already gates
---itself -- oUF polls at .5s, Cooldowns/Smoothie use nextUpdate/active gates).
---20Hz is invisible in play and cuts this work ~3x at 60fps.
+--Two things happen here, deliberately at different rates.
+--
+--Alpha runs EVERY frame. ElvUI's fade manager animates a plate's parent alpha
+--independently, and while a target exists this pins it back to 1. Gating that to
+--the throttled rate let the fade win for a frame at a time and plates visibly
+--flickered whenever something was targeted. Keep the unconditional SetAlpha(1)
+--too: stock does that on purpose, and skipping it when alpha already reads 1
+--changes the behaviour.
+--
+--Everything else (mouseover/target state, unit info, threat, glow) is polled at
+--a fixed rate instead of once per rendered frame. That work was the single
+--biggest un-throttled CPU cost in nameplates; every other per-frame path in
+--ElvUI already gates itself (oUF polls at .5s, Cooldowns/Smoothie use
+--nextUpdate/active gates). Discovery stays per-frame, one cheap C call, so new
+--plates still appear instantly.
 local PLATE_UPDATE_INTERVAL = 0.05
 local plateUpdateElapsed = 0
 
@@ -869,19 +877,21 @@ function NP:OnUpdate(elapsed)
 		lastChildern = numChildren
 	end
 
+	for frame in pairs(NP.VisiblePlates) do
+		if hasTarget then
+			local parent = frame:GetParent()
+			frame.alpha = parent:GetAlpha()
+			parent:SetAlpha(1)
+		else
+			frame.alpha = 1
+		end
+	end
+
 	plateUpdateElapsed = plateUpdateElapsed + (elapsed or 0)
 	if plateUpdateElapsed < PLATE_UPDATE_INTERVAL then return end
 	plateUpdateElapsed = 0
 
 	for frame in pairs(NP.VisiblePlates) do
-		if hasTarget then
-			local parent = frame:GetParent()
-			frame.alpha = parent:GetAlpha()
-			if frame.alpha ~= 1 then parent:SetAlpha(1) end
-		else
-			frame.alpha = 1
-		end
-
 		NP:SetMouseoverFrame(frame)
 		NP:SetTargetFrame(frame)
 

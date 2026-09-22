@@ -1261,6 +1261,22 @@ function E:Initialize()
 	twipe(self.global)
 	twipe(self.private)
 
+	-- Proactive GC tuning. Lua 5.1's default GC can cause frame drops when it
+	-- decides to do a full collection cycle. Increase the step multiplier so GC
+	-- does less work per cycle, then run small incremental steps once per second
+	-- to spread the work across frames instead of letting it spike.
+	collectgarbage("setstepmul", 200)
+	collectgarbage("restart")
+
+	local gcFrame = CreateFrame("Frame")
+	gcFrame:SetScript("OnUpdate", function(self, elapsed)
+		self.timer = (self.timer or 0) + elapsed
+		if self.timer >= 1 then
+			self.timer = 0
+			collectgarbage("step", 10)
+		end
+	end)
+
 	self.myguid = UnitGUID("player")
 	self.data = E.Libs.AceDB:New("ElvDB", self.DF)
 	self.data.RegisterCallback(self, "OnProfileChanged", "UpdateAll")

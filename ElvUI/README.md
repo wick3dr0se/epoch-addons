@@ -4,26 +4,32 @@ Fork of [ElvUI Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) v6.11, the WotL
 
 ## What changed from stock
 
-The main improvement is a performance-optimised nameplate update loop. Stock ElvUI ran the expensive per-plate pass (mouseover/target state, unit info, threat, glow) on every rendered frame with no throttling. This fork fixes that, plus cleans up dead code and a pre-existing rendering bug.
-
-All changes are in `Modules/Nameplates/Nameplates.lua` unless noted.
+Performance-focused changes across nameplates, auras, unit frames, tags, and garbage collection. All changes are backward-compatible with the standard ElvUI settings panel.
 
 ### Nameplate performance
 
 - **Merged two VisiblePlates loops into one.** Stock iterated all visible plates twice per frame: once for the alpha pin (every frame) and once for the throttled work (20 Hz). Now a single loop with a `throttled` flag. Saves one full table iteration per frame.
 - **Throttled per-plate pass at 20 Hz.** `PLATE_UPDATE_INTERVAL = 0.05`. This gates the expensive work (mouseover/target state, `GetUnitInfo`, threat, glow) while plate discovery and the alpha pin stay per-frame so new plates appear instantly and target highlighting stays smooth.
-- **Alpha pin skips redundant SetAlpha(1).** Reads parent alpha first, only calls `SetAlpha(1)` when it's not already 1. Cuts the C call roughly in half when a target exists. Still per-frame, still unconditional in intent. Gating this to 20 Hz caused visible flicker; skipping a *redundant* write is different and safe.
-- **Cached bordercolor in StyleFrame.** `unpack(E.media.bordercolor)` called once into locals instead of 8 times per plate styled. Also fixes a pre-existing bug: the borderright backdrop had `noscalemult` instead of `-noscalemult` on its BOTTOMRIGHT anchor, which offset the right border backdrop incorrectly.
+- **Alpha pin skips redundant SetAlpha(1).** Reads parent alpha first, only calls `SetAlpha(1)` when it's not already 1. Cuts the C call roughly in half when a target exists. Still per-frame, still unconditional in intent.
+- **Cached bordercolor in StyleFrame.** `unpack(E.media.bordercolor)` called once into locals instead of 8 times per plate styled. Also fixes a pre-existing bug: the borderright backdrop had `noscalemult` instead of `-noscalemult` on its BOTTOMRIGHT anchor.
+
+### Aura and tag performance
+
+- **Batched UNIT_AURA updates.** Stock processed every buff/debuff change immediately, each triggering a full `UnitAura` scan and sort. The fork debounces with a 0.15s delay so multiple changes within the window coalesce into one scan.
+- **Removed PetBar UNIT_AURA.** Pet auras don't affect action bar icons. Stock registered `UNIT_AURA` on the pet bar and iterated all 10 action slots on every change.
+- **Batched oUF tag updates.** Tags are queued on events and processed once per frame via OnUpdate instead of immediately on every event. Prevents the "reaping issue" where multiple events in one frame each trigger cascading tag updates that drain FPS over time.
+
+### Unit frame performance
+
+- **Force 2D portraits on group frames.** 3D `PlayerModel` frames are expensive. Raid, party, boss, and arena frames now always use 2D portraits regardless of the user's Portrait > Style setting. Individual frames (player, target, focus, pet) keep their choice.
+
+### Garbage collection
+
+- **Proactive GC tuning.** Increases the Lua 5.1 GC step multiplier and runs incremental collection steps once per second. Spreads garbage collection across frames instead of letting it spike and cause frame drops.
 
 ### Dead code removal
 
-- **Removed LFR skin** (`Modules/Skins/Blizzard/LFR.lua`). LFR was added in Cataclysm 4.3 and does not exist in 3.3.5a. The skin file was 88 lines of dead code that would error if its settings toggle were enabled.
-
-### Aura performance
-
-- **Batched UNIT_AURA updates.** Stock processed every buff/debuff change immediately, each triggering a full `UnitAura` scan and sort. In raids this fires extremely often. The fork debounces with a 0.15s delay so multiple changes within the window coalesce into one scan.
-- **Removed PetBar UNIT_AURA.** Pet auras don't affect action bar icons. Stock registered `UNIT_AURA` on the pet bar and iterated all 10 action slots on every change.
-- **Batched oUF tag updates.** Tags are queued on events and processed once per frame via OnUpdate instead of immediately on every event. Prevents the "reaping issue" where multiple events in one frame each trigger cascading tag updates that drain FPS over time.
+- **Removed LFR skin.** LFR was added in Cataclysm 4.3 and does not exist in 3.3.5a. The skin file was 88 lines of dead code that would error if its settings toggle were enabled.
 
 ### Tuning
 

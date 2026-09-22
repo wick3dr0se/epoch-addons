@@ -37,6 +37,17 @@ function UF:Configure_Portrait(frame, dontHide)
 	end
 	frame.Portrait = db.portrait.style == "2D" and frame.Portrait2D or frame.Portrait3D
 
+	-- Force 2D portraits on group frames. 3D PlayerModel frames are expensive
+	-- and 40 of them in a raid will tank FPS. Individual frames (player, target,
+	-- focus, pet) keep whatever the user chose.
+	local isGroupFrame = frame.unitframeType == "raid" or frame.unitframeType == "raid40"
+		or frame.unitframeType == "raidpet" or frame.unitframeType == "party"
+		or frame.unitframeType == "boss" or frame.unitframeType == "arena"
+		or frame.unitframeType == "tank" or frame.unitframeType == "assist"
+	if isGroupFrame and db.portrait.style ~= "2D" then
+		frame.Portrait = frame.Portrait2D
+	end
+
 	local portrait = frame.Portrait
 	if frame.USE_PORTRAIT then
 		if not frame:IsElementEnabled("Portrait") then

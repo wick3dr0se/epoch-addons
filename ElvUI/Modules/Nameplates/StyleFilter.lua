@@ -750,7 +750,9 @@ function mod:StyleFilterConfigure()
 				end
 
 				-- real events
-				mod.StyleFilterTriggerEvents.PLAYER_TARGET_CHANGED = true
+				if t.isTarget or t.notTarget then
+					mod.StyleFilterTriggerEvents.PLAYER_TARGET_CHANGED = true
+				end
 
 				if t.healthThreshold then
 					mod.StyleFilterTriggerEvents.UNIT_HEALTH = 1

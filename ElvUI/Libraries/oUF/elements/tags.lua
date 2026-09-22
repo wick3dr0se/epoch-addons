@@ -666,8 +666,14 @@ local function Tag(self, fs, tagstr)
 	local containsOnUpdate
 	for tag in tagstr:gmatch(_PATTERN) do
 		tag = getTagName(tag)
-		if not tagEvents[tag] then
-			containsOnUpdate = onUpdateDelay[tag] or 0.15;
+		if onUpdateDelay[tag] then
+			containsOnUpdate = onUpdateDelay[tag]
+		elseif not tagEvents[tag] then
+			-- Tag has no events and no explicit OnUpdate delay. Default to 0.15s
+			-- polling. Only do this for tags that truly have no event path -- tags
+			-- with onUpdateDelay are handled above and should not force the whole
+			-- string to OnUpdate.
+			containsOnUpdate = 0.15
 		end
 	end
 

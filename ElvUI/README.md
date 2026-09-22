@@ -19,6 +19,10 @@ All changes are in `Modules/Nameplates/Nameplates.lua` unless noted.
 
 - **Removed LFR skin** (`Modules/Skins/Blizzard/LFR.lua`). LFR was added in Cataclysm 4.3 and does not exist in 3.3.5a. The skin file was 88 lines of dead code that would error if its settings toggle were enabled.
 
+### Aura performance
+
+- **Batched UNIT_AURA updates.** Stock processed every buff/debuff change immediately, each triggering a full `UnitAura` scan and sort. In raids this fires extremely often. The fork debounces with a 0.15s delay so multiple changes within the window coalesce into one scan.
+
 ### Tuning
 
 The nameplate throttle has no in-game toggle. Edit `PLATE_UPDATE_INTERVAL` in `Modules/Nameplates/Nameplates.lua` directly:

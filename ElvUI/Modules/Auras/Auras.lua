@@ -591,11 +591,29 @@ function A:CreateAuraHeader(filter)
 	header:SetClampedToScreen(true)
 	header.filter = filter
 
+	-- UNIT_AURA fires on every buff/debuff change. In raids this can be
+	-- extremely frequent. Batch updates with a 0.15s debounce so multiple
+	-- events within the window coalesce into one scan.
+	local AURA_UPDATE_DELAY = 0.15
+	header.pending = false
+	header.elapsed = 0
+
 	header:RegisterEvent("UNIT_AURA")
 	header:SetScript("OnEvent", function(self, _, unit)
 		if unit ~= "player" then return end
 
-		A:UpdateHeader(self)
+		if not self.pending then
+			self.pending = true
+			self.elapsed = 0
+			self:SetScript("OnUpdate", function(s, dt)
+				s.elapsed = s.elapsed + dt
+				if s.elapsed >= AURA_UPDATE_DELAY then
+					s:SetScript("OnUpdate", nil)
+					s.pending = false
+					A:UpdateHeader(s)
+				end
+			end)
+		end
 	end)
 
 	self:UpdateHeader(header)

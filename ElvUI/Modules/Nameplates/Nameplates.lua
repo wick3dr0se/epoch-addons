@@ -299,24 +299,40 @@ end
 
 function NP:GetUnitInfo(frame)
 	local r, g, b = frame.oldHealthBar:GetStatusBarColor()
+
+	-- Cache the unit type per plate. Health bar color rarely changes (set on
+	-- plate creation/update), so skipping the color comparison on subsequent
+	-- calls saves the branching logic. The cache is cleared in OnShow/OnHide.
+	if frame._cachedR == r and frame._cachedG == g and frame._cachedB == b and frame._cachedUnitType then
+		return frame._cachedReaction, frame._cachedUnitType
+	end
+	frame._cachedR, frame._cachedG, frame._cachedB = r, g, b
+
+	local reaction, unitType
 	if r < 0.01 then
 		if b < 0.01 and g > 0.99 then
-			return 5, "FRIENDLY_NPC"
+			reaction, unitType = 5, "FRIENDLY_NPC"
 		elseif b > 0.99 and g < 0.01 then
-			return 5, "FRIENDLY_PLAYER"
+			reaction, unitType = 5, "FRIENDLY_PLAYER"
 		end
 	elseif r > 0.99 then
 		if b < 0.01 and g > 0.99 then
-			return 4, "ENEMY_NPC"
+			reaction, unitType = 4, "ENEMY_NPC"
 		elseif b < 0.01 and g < 0.01 then
-			return 2, "ENEMY_NPC"
+			reaction, unitType = 2, "ENEMY_NPC"
 		end
 	elseif r > 0.5 and r < 0.6 then
 		if g > 0.5 and g < 0.6 and b > 0.5 and b < 0.6 then
-			return 1, "ENEMY_NPC"
+			reaction, unitType = 1, "ENEMY_NPC"
 		end
 	end
-	return 3, "ENEMY_PLAYER"
+
+	if not reaction then
+		reaction, unitType = 3, "ENEMY_PLAYER"
+	end
+
+	frame._cachedReaction, frame._cachedUnitType = reaction, unitType
+	return reaction, unitType
 end
 
 function NP:GetUnitTypeFromUnit(unit)
@@ -348,6 +364,9 @@ function NP:OnShow(isConfig, dontHideHighlight)
 
 	if self:IsShown() then
 		NP.VisiblePlates[frame] = 1
+		-- Invalidate GetUnitInfo cache so it re-reads health bar color
+		frame._cachedR, frame._cachedG, frame._cachedB = nil, nil, nil
+		frame._cachedReaction, frame._cachedUnitType = nil, nil
 	end
 
 	frame.UnitName = gsub(frame.oldName:GetText() or "", FSPAT, "")

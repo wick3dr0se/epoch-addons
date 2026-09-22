@@ -15,6 +15,7 @@ Derived from community-reported issues (Reddit r/classicwow, r/WowUI, MMO-Champi
 - **Alpha pin skips redundant SetAlpha(1).** Reads parent alpha first, only calls `SetAlpha(1)` when it's not already 1. Cuts the C call roughly in half when a target exists. Still per-frame, still unconditional in intent.
 - **Cached bordercolor in StyleFrame.** `unpack(E.media.bordercolor)` called once into locals instead of 8 times per plate styled. Also fixes a pre-existing bug: the borderright backdrop had `noscalemult` instead of `-noscalemult` on its BOTTOMRIGHT anchor.
 - **Conditional style filter events** (cf. upstream L4319). `PLAYER_TARGET_CHANGED` is now only registered when a filter actually uses `isTarget`/`notTarget` triggers. Reduces unnecessary filter evaluation on target switches.
+- **Cached GetUnitInfo.** Health bar color to unit type mapping is cached per plate. Avoids redundant color comparison on every tick. Cache is invalidated on plate show/hide.
 
 ### Aura and tag performance
 
@@ -29,7 +30,7 @@ Derived from community-reported issues (Reddit r/classicwow, r/WowUI, MMO-Champi
 
 ### Garbage collection
 
-- **Proactive GC tuning.** Increases the Lua 5.1 GC step multiplier and runs incremental collection steps once per second. Spreads garbage collection across frames instead of letting it spike and cause frame drops.
+- **Combat-aware GC tuning.** Uses smaller GC steps during combat to avoid frame drops when they're most noticeable, larger steps when idle to reclaim memory faster.
 
 ### Dead code removal
 

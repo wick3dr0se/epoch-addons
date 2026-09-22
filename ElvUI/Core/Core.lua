@@ -1262,18 +1262,27 @@ function E:Initialize()
 	twipe(self.private)
 
 	-- Proactive GC tuning. Lua 5.1's default GC can cause frame drops when it
-	-- decides to do a full collection cycle. Increase the step multiplier so GC
-	-- does less work per cycle, then run small incremental steps once per second
-	-- to spread the work across frames instead of letting it spike.
+	-- decides to do a full collection cycle. During combat, use smaller steps
+	-- to avoid frame drops when they're most noticeable. When idle, use larger
+	-- steps to reclaim memory faster. No emergency full GC -- incremental
+	-- steps are sufficient and avoid the frame drops from collectgarbage("collect").
 	collectgarbage("setstepmul", 200)
 	collectgarbage("restart")
 
 	local gcFrame = CreateFrame("Frame")
+	local GC_COMBAT_STEP = 5
+	local GC_IDLE_STEP = 20
+	gcFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+	gcFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	gcFrame:SetScript("OnEvent", function(self, event)
+		self.inCombat = (event == "PLAYER_REGEN_DISABLED")
+	end)
 	gcFrame:SetScript("OnUpdate", function(self, elapsed)
 		self.timer = (self.timer or 0) + elapsed
 		if self.timer >= 1 then
 			self.timer = 0
-			collectgarbage("step", 10)
+			local step = self.inCombat and GC_COMBAT_STEP or GC_IDLE_STEP
+			collectgarbage("step", step)
 		end
 	end)
 

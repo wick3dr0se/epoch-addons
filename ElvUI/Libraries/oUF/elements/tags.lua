@@ -486,14 +486,28 @@ local unitlessEvents = {
 }
 
 local events = {}
+local pendingTags = {}
+local tagsDirty = false
 local frame = CreateFrame('Frame')
 frame:SetScript('OnEvent', function(self, event, unit)
 	local strings = events[event]
 	if(strings) then
 		for _, fontstring in next, strings do
 			if(fontstring:IsVisible() and (unitlessEvents[event] or fontstring.parent.unit == unit)) then
-				fontstring:UpdateTag()
+				pendingTags[fontstring] = true
+				tagsDirty = true
 			end
+		end
+	end
+end)
+
+frame:SetScript('OnUpdate', function(self)
+	if not tagsDirty then return end
+	tagsDirty = false
+	for fs in next, pendingTags do
+		pendingTags[fs] = nil
+		if fs:IsVisible() then
+			fs:UpdateTag()
 		end
 	end
 end)

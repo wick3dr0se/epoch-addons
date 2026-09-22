@@ -22,6 +22,8 @@ All changes are in `Modules/Nameplates/Nameplates.lua` unless noted.
 ### Aura performance
 
 - **Batched UNIT_AURA updates.** Stock processed every buff/debuff change immediately, each triggering a full `UnitAura` scan and sort. In raids this fires extremely often. The fork debounces with a 0.15s delay so multiple changes within the window coalesce into one scan.
+- **Removed PetBar UNIT_AURA.** Pet auras don't affect action bar icons. Stock registered `UNIT_AURA` on the pet bar and iterated all 10 action slots on every change.
+- **Batched oUF tag updates.** Tags are queued on events and processed once per frame via OnUpdate instead of immediately on every event. Prevents the "reaping issue" where multiple events in one frame each trigger cascading tag updates that drain FPS over time.
 
 ### Tuning
 

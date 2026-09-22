@@ -290,7 +290,6 @@ function AB:CreateBarPet()
 	self:RegisterEvent("PET_BAR_UPDATE", "UpdatePet")
 	self:RegisterEvent("UNIT_PET", "UpdatePet")
 	self:RegisterEvent("UNIT_FLAGS", "UpdatePet")
-	self:RegisterEvent("UNIT_AURA", "UpdatePet")
 	self:RegisterEvent("PLAYER_FARSIGHT_FOCUS_CHANGED", "UpdatePet")
 	self:RegisterEvent("PET_BAR_UPDATE_COOLDOWN", PetActionBar_UpdateCooldowns)
 

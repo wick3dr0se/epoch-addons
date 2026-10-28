@@ -1,10 +1,12 @@
 # ElvUI
 
-Fork of [ElvUI Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) v6.11, the WotLK backport for WoW 3.3.5a. Works on Project Epoch and any 3.3.5a server. The installed folder stays `ElvUI` so plugins resolving `Dependencies: ElvUI` keep working.
+Fork of [ElvUI Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) v6.11, the WotLK backport for WoW 3.3.5a. The installed folder stays `ElvUI` so plugins resolving `Dependencies: ElvUI` keep working.
 
 ## What changed from stock
 
 Performance-focused changes across nameplates, auras, unit frames, tags, and garbage collection. All changes are backward-compatible with the standard ElvUI settings panel.
+
+The minimap clock is restored and styled. ElvUI hides Blizzard's clock and draws time from its own module, which shows no day/night cycle on this server, so the Blizzard clock is back with configurable font, background and border under General, Minimap.
 
 Derived from community-reported issues (Reddit r/classicwow, r/WowUI, MMO-Champion) and the [upstream ElvUI CHANGELOG](https://github.com/tukui-org/ElvUI/blob/main/CHANGELOG.md) performance fixes (versions 11.11 through 14.00).
 

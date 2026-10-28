@@ -1,14 +1,22 @@
-# epoch-addons
+# Project Epoch Reborn Addon Collection
 
-WoW 3.3.5a addons for Project Epoch. Most work on any WotLK server but may be tuned toward Epoch specifics (vanilla + TBC talents, custom mechanics).
+A collection of addons for Project Epoch Reborn.
 
 ## Addons
 
-| Addon | Type | Description |
+### Epoch-specific
+
+| Addon | Type | What it is |
 |-------|------|-------------|
-| [ElvUI](ElvUI/) | UI replacement | Fork of [ElvUI-Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) (v6.11). Performance-optimised nameplates, auras, tags, portraits, and GC. Stable on Epoch. |
-| [ElvUI Seal Twist](ElvUI_SealTwist/) | ElvUI plugin | Paladin seal-twisting helper. Highlights the twist window on your swing bar and shows which seal to cast next. |
-| [ElvUI Damage Meter](ElvUI_DamageMeter/) | ElvUI plugin | Minimal damage meter. Tracks damage per spell with DPS, hit count, and averages. |
+| [ElvUI_pfQuest](ElvUI_pfQuest/) | Quest helper | pfQuest 7.0.1 with everything pfQuest Epoch added for this server: quest, item, object and unit data, continent pins, nameplate quest icons, the loot panel and quest announcements. ElvUI-native UI with its settings in the ElvUI panel. Fork of [pfQuest Epoch](https://github.com/Bennylavaa/pfQuest-epoch). |
+
+### Fine on any 3.3.5a
+
+| Addon | Type | What it is |
+|-------|------|-------------|
+| [ElvUI](ElvUI/) | UI replacement | Fork of [ElvUI Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) v6.11 with performance work across nameplates, auras, unit frames, tags, portraits and garbage collection. The folder stays `ElvUI` so plugins resolving `Dependencies: ElvUI` keep working. |
+| [ElvUI Seal Twist](ElvUI_SealTwist/) | ElvUI plugin | Paladin seal-twisting helper for the swing bar: highlights the twist window and shows which seal to cast next. Needs TBC-style talent trees. |
+| [ElvUI Damage Meter](ElvUI_DamageMeter/) | ElvUI plugin | Minimal damage meter. Tracks damage per spell with DPS, hit count and averages. |
 
 ## Install
 
@@ -21,15 +29,26 @@ Wow/
       ElvUI/
         ElvUI.toc
         (Core/, Modules/, Libraries/, Media/, ...)
+      ElvUI_OptionsUI/
+        ElvUI_OptionsUI.toc
+        (Core.lua, Maps.lua, Libraries/, Locales/, ...)
       ElvUI_SealTwist/
         ElvUI_SealTwist.toc
         ElvUI_SealTwist.lua
 ```
 
-`ElvUI` replaces the stock ElvUI install. It still needs `ElvUI_OptionsUI` (unmodified, taken from the upstream ElvUI release) alongside it for the in-game config panel.
+`ElvUI` replaces the stock ElvUI install. `ElvUI_OptionsUI` ships beside it in this repo, so copy both folders: the in-game config panel loads from it.
+
+## Licences
+
+Each addon keeps its upstream licence.
+
+- `ElvUI/` and `ElvUI_OptionsUI/` are under Tukui's custom licence: free to use, modifications for private use or on GitHub, folder names unchanged, copyright notice kept. See `LICENSE.txt` in each folder, and `ThirdPartyNotices.md` for the bundled libraries (Ace3, oUF, LibSharedMedia and others).
+- `ElvUI_pfQuest/` carries pfQuest's MIT text as `LICENSE-pfQuest-MIT` and pfQuest Epoch's licence as `LICENSE`, which governs it.
+- `ElvUI_SealTwist/` and `ElvUI_DamageMeter/` are ours.
 
 ## Compatibility
 
-Tested on WoW 3.3.5a (Project Epoch). The ElvUI fork should work on any WotLK 3.3.5a server. Plugins require the ElvUI fork as a dependency.
+Only `ElvUI_pfQuest` is tied to this server: it ships the quest data, and the engine it is built on has nothing to show without it. Everything else is a general addon and runs anywhere 3.3.5a does.
 
 3.3.5a runs embedded Lua 5.1. No `C_Timer`, `SetColorTexture`, `CombatLogGetCurrentEventInfo`, `BackdropTemplateMixin`, or other retail APIs.

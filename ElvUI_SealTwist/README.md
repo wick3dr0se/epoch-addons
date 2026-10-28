@@ -1,6 +1,6 @@
 # ElvUI Seal Twist
 
-Paladin seal-twisting helper for WoW 3.3.5 (TBC mechanics). Judgment-CD based rotation overlay for ElvUI_SwingBar.
+Paladin seal-twisting helper for WoW 3.3.5a. Judgment-CD based rotation overlay for ElvUI_SwingBar.
 
 ## How it works
 

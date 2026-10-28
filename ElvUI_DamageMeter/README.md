@@ -1,6 +1,6 @@
 # ElvUI Damage Meter
 
-Minimal damage meter for WoW 3.3.5. Tracks damage per spell with DPS, hit count, and averages. Toggle via `/dm` or the icon button in the right chat panel.
+Minimal damage meter for WoW 3.3.5a. Tracks damage per spell with DPS, hit count, and averages. Toggle via `/dm` or the icon button in the right chat panel.
 
 ## What it does
 

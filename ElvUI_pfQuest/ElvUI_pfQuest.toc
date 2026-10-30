@@ -1,0 +1,20 @@
+## Interface: 30300
+## Title: |cff1784d1E|r|cffe5e3e3lvUI|r |cff33ffccpf|cffffffffQuest|r |cffcccccc[Repoch]|r
+## Author: Shagu, Bennylavaa (ElvUI fork: wick3dr0se)
+## Contributors: Exuria, snifflewow, skmd0, trav346, emailnumero123-art, Defcons, Kindrack
+## Notes: Questhelper and database for Project Epoch with an ElvUI UI
+## Notes: Fork of pfQuest-epoch (github.com/Bennylavaa/pfQuest-epoch) and pfQuest-wotlk (github.com/shagu/pfQuest)
+## Version: 8.0.0-elvui.1
+## Dependencies: ElvUI
+## SavedVariables: pfQuest_questcache, pfQuest_epochcount, pfQuest_CompletedQuestData
+## SavedVariablesPerCharacter: pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server, pfQuest_track
+
+init\data.xml
+init\enUS.xml
+
+init\addon.xml
+
+init\data-epoch.xml
+init\enUS-epoch.xml
+
+init\epoch.xml

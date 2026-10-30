@@ -1,0 +1,22 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <Include file="..\elvui.lua"/>
+  <Include file="..\compat\client.lua"/>
+  <Include file="..\overwrites.lua"/>
+  <Include file="..\locales.lua"/>
+  <Include file="..\defconfig.lua"/>
+  <Include file="..\config.lua"/>
+  <Include file="..\slashcmd.lua"/>
+  <Include file="..\settings.lua"/>
+  <Include file="..\options.lua"/>
+  <Include file="..\database.lua"/>
+  <Include file="..\icons.lua"/>
+  <Include file="..\map.lua"/>
+  <Include file="..\quest.lua"/>
+  <Include file="..\route.lua"/>
+  <Include file="..\tracker.lua"/>
+  <Include file="..\wizard.lua"/>
+  <Include file="..\browser_elvui.lua"/>
+  <Include file="..\journal.lua"/>
+  <Include file="..\menu.lua"/>
+  <Include file="..\updatenotify.lua"/>
+</Ui>

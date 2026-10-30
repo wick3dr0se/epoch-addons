@@ -1,0 +1,11 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <Include file="..\epoch-overwrites.lua"/>
+  <Include file="..\patchtable.lua"/>
+  <Include file="..\pfQuest-worldmap.lua"/>
+  <Include file="..\pfQuest-tooltip.lua"/>
+  <Include file="..\pfQuest-lootpanel.lua"/>
+  <Include file="..\pfQuest-nameplates.lua"/>
+  <Include file="..\pfQuest-announce.lua"/>
+  <Include file="..\pfquest-questlog.lua"/>
+  <Include file="..\pfquest-arrow.lua"/>
+</Ui>

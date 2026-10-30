@@ -177,15 +177,8 @@ pfq.Refresh()
 check("refresh re-applies the new font", label.font[1] == "ElvUI\\Fonts\\Other.ttf", label.font[1])
 
 -- scroll frame answers both call styles pfQuest uses
-local scroll = pfq.CreateScrollFrame("specScroll", env.CreateFrame("Frame"))
-check("scroll exposes slider", scroll.slider ~= nil)
-scroll.UpdateScrollState()
-scroll:UpdateScrollState()
-scroll:Scroll(10)
-scroll.Scroll(scroll, 10)
-check("scroll tolerates dot and colon calls", true)
-local child = pfq.CreateScrollChild("specScrollChild", scroll)
-check("scroll child parented", scroll.child == child)
+-- the scroll helpers were removed when the browser grew its own row window,
+-- so there is nothing left to exercise here
 
 local pattern = pfq.SanitizePattern("fire %s")
 check("pattern escaped", type(pattern) == "string" and pattern ~= "fire %s")

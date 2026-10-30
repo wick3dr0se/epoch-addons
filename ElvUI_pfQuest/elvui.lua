@@ -37,11 +37,9 @@ pfq.chat = nil
 local backdrops = setmetatable({}, { __mode = "k" })
 local buttons = setmetatable({}, { __mode = "k" })
 local fonts = setmetatable({}, { __mode = "k" })
-local thumbst = setmetatable({}, { __mode = "k" })
 pfq.backdrops = backdrops
 pfq.buttons = buttons
 pfq.fonts = fonts
-pfq.scrollThumbs = thumbst
 
 ---------------------------------------------------------------------------
 -- media
@@ -379,121 +377,6 @@ function pfq.ConvertFrameAnchor(frame, anchor)
   return anchor, pfq.round(x, 2), pfq.round(y, 2)
 end
 
----------------------------------------------------------------------------
--- scroll frame (browser result list)
----------------------------------------------------------------------------
-
-local function tintThumb(thumb)
-  if not thumb then return end
-  local r, g, b = pfq.accent()
-  thumb:SetTexture(r, g, b, 0.6)
-end
-
-function pfq.tintScrollThumbs()
-  for thumb in pairs(thumbst) do
-    tintThumb(thumb)
-  end
-end
-
-function pfq.CreateScrollFrame(name, parent)
-  local f = CreateFrame("ScrollFrame", name, parent)
-
-  local slider = CreateFrame("Slider", nil, f)
-  slider:SetOrientation("VERTICAL")
-  slider:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 0)
-  slider:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 2, 0)
-  slider:SetWidth(4)
-  slider:SetThumbTexture(blankTex())
-
-  local thumb = slider:GetThumbTexture()
-  thumb:SetWidth(4)
-  thumb:SetHeight(48)
-  thumbst[thumb] = true
-  tintThumb(thumb)
-
-  f.slider = slider
-  f.slider.thumb = thumb
-
-  local wiring = false
-  slider:SetScript("OnValueChanged", function(self, value)
-    if wiring then return end
-    wiring = true
-    f:SetVerticalScroll(value)
-    f.UpdateScrollState()
-    wiring = false
-  end)
-
-  -- called both as f.UpdateScrollState() and f:UpdateScrollState()
-  f.UpdateScrollState = function(self)
-    self = self or f
-    local range = self:GetVerticalScrollRange()
-    slider:SetMinMaxValues(0, range)
-    slider:SetValue(self:GetVerticalScroll())
-
-    local height = self:GetHeight()
-    local ratio = height / (height + range)
-
-    if ratio < 1 then
-      local size = floor(height * ratio)
-      thumb:SetHeight(size > 12 and size or 12)
-      slider:Show()
-    else
-      slider:Hide()
-    end
-  end
-
-  f.Scroll = function(self, step)
-    self = self or f
-    local current = self:GetVerticalScroll()
-    local maximum = self:GetVerticalScrollRange()
-    local target = current - (step or 0)
-
-    if target >= maximum then
-      self:SetVerticalScroll(maximum)
-    elseif target <= 0 then
-      self:SetVerticalScroll(0)
-    else
-      self:SetVerticalScroll(target)
-    end
-
-    self:UpdateScrollState()
-  end
-
-  f:EnableMouseWheel(1)
-  f:SetScript("OnMouseWheel", function(self, delta)
-    self:Scroll((delta or 0) * 10)
-  end)
-
-  return f
-end
-
-function pfq.CreateScrollChild(name, parent)
-  local f = CreateFrame("Frame", name, parent)
-  f:SetWidth(1)
-  f:SetHeight(1)
-  f:SetAllPoints(parent)
-  parent:SetScrollChild(f)
-
-  -- pfUI re-synced the scrollbar every frame. Rows only change on search, so
-  -- 10Hz is invisible and saves a per-frame full scroll update while open.
-  local elapsed = 0
-  f:SetScript("OnUpdate", function(self, delta)
-    elapsed = elapsed + (delta or 0)
-    if elapsed < 0.1 then return end
-    elapsed = 0
-    local scroll = self:GetParent()
-    if scroll and scroll.UpdateScrollState then
-      scroll:UpdateScrollState()
-    end
-  end)
-
-  return f
-end
-
----------------------------------------------------------------------------
--- repaint after ElvUI media exists
----------------------------------------------------------------------------
-
 function pfq.Refresh()
   -- rebuild, not just recolor: backdrops created before E:Initialize() are
   -- holding the fallback texture
@@ -513,7 +396,6 @@ function pfq.Refresh()
     end
   end
 
-  pfq.tintScrollThumbs()
 end
 
 local frame = CreateFrame("Frame")

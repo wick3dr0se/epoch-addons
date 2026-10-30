@@ -63,7 +63,19 @@ local function makeFrame(kind)
   function f:Hide() self.shown = false end
   function f:IsShown() return self.shown end
   function f:RegisterEvent(e) self.events[e] = true end
-  function f:SetScript(k, fn) self["script_" .. k] = fn end
+  -- 3.3.5a frames only accept their own script types; a plain Frame rejects
+  -- OnValueChanged, which is a Slider/Edit script. Accepting anything here is
+  -- what let a load-time abort pass the suite.
+  local FRAME_SCRIPTS = {
+    OnClick = true, OnEnter = true, OnLeave = true, OnMouseDown = true, OnMouseUp = true,
+    OnMouseWheel = true, OnUpdate = true, OnShow = true, OnHide = true, OnTextChanged = true,
+    OnEnterPressed = true, OnEscapePressed = true, OnChar = true, OnKeyDown = true, OnKeyUp = true,
+    OnDragStart = true, OnDragStop = true, OnMouseOver = true, OnSizeChanged = true, OnEvent = true,
+  }
+  function f:SetScript(k, fn)
+    assert(FRAME_SCRIPTS[k], "SetScript on a frame with an unsupported script type: " .. tostring(k))
+    self["script_" .. k] = fn
+  end
   function f:GetScript(k) return self["script_" .. k] end
   function f:HookScript(k, fn) self["hook_" .. k] = fn end
   function f:SetBackdrop(t) self.backdrop = t end
@@ -282,20 +294,98 @@ check("four tabs exist", browser.tabs.quests and browser.tabs.units and browser.
 check("epoch shape: tabs[type].buttons", type(browser.tabs.quests.buttons) == "table")
 check("epoch shape: browser.input", browser.input ~= nil)
 
-browser:Search("killing")
-local visible = 0
-for _, row in ipairs(browser.tabs.quests.buttons) do
-  if row.id then visible = visible + 1 end
+local function visibleRows(tab)
+  local n = 0
+  for _, row in ipairs(tab.buttons) do if row.id then n = n + 1 end end
+  return n
 end
-check("search fills the quest tab", visible == 1, visible)
+
+browser:Search("killing")
+check("search fills the quest tab", visibleRows(browser.tabs.quests) == 1, visibleRows(browser.tabs.quests))
 check("row text carries the name", (browser.tabs.quests.buttons[1].text:GetText() or ""):find("The Killing Fields") ~= nil)
 
+browser:Search("")
+check("an empty box browses the table instead of showing nothing", visibleRows(browser.tabs.quests) == 2, visibleRows(browser.tabs.quests))
+check("every tab is filled, not just the active one", visibleRows(browser.tabs.items) == 1, visibleRows(browser.tabs.items))
+
+do
+  local label = browser.tabs.quests.button:GetFontString()
+  check("tab button carries only its caption", label and label:GetText() == "Quests", label and label:GetText())
+  local count = (browser.count and browser.count:GetText()) or ""
+  check("the count readout shows the visible range", count == "1-2/2", count)
+end
+
+do
+  -- 150 entries, a 15 row window: the window moves, the list does not shrink
+  local big = {}
+  for i = 1, 150 do big[i] = { T = "Quest " .. i } end
+  local saved = env.pfDB.quests.loc
+  env.pfDB.quests.loc = big
+  browser:Search("")
+
+  local tab = browser.tabs.quests
+  check("the row pool stays at the window size", #tab.buttons == 15, #tab.buttons)
+  check("the first window shows 15 of 150", visibleRows(tab) == 15, visibleRows(tab))
+  check("the count readout shows the window", (browser.count:GetText()) == "1-15/150", browser.count:GetText())
+  check("the slider spans the whole list", tab.slider.maxValue == 135, tab.slider.maxValue)
+
+  local firstId = tab.buttons[1].id
+  tab.buttons[1].script_OnMouseWheel(tab.buttons[1], -2)
+  check("the wheel moves the window", tab.offset == 4, tab.offset)
+  check("the first row now shows a later entry", tab.buttons[1].id ~= firstId, tab.buttons[1].id)
+  check("the count readout follows the window", (browser.count:GetText()) == "5-19/150", browser.count:GetText())
+
+  tab.slider:SetValue(135)
+  check("the slider can reach the end", tab.offset == 135 and tab.buttons[15].id ~= nil, tab.offset)
+  check("the last window ends at 150", (browser.count:GetText()) == "136-150/150", browser.count:GetText())
+
+  -- a Slider frame gets a second thumb from the skin engine, which showed up as
+  -- one bar frozen at the top and another that moved
+  check("the scrollbar draws its own track and thumb", tab.slider.track ~= nil and tab.slider.thumb ~= nil)
+
+  tab.slider:SetHeight(300)
+  tab.slider:SetValue(0)
+  check("the thumb spans the visible slice", tab.slider.thumb.height == 30, tab.slider.thumb.height)
+
+  local lastPoint = tab.slider.thumb.points[#tab.slider.thumb.points]
+  check("the thumb starts at the top", lastPoint.args[4] == 0, lastPoint.args[4])
+
+  tab.slider:SetValue(135)
+  lastPoint = tab.slider.thumb.points[#tab.slider.thumb.points]
+  check("the thumb ends at the bottom", lastPoint.args[4] == -270, lastPoint.args[4])
+
+  env.pfDB.quests.loc = saved
+  browser:Search("")
+end
+
+do
+  -- ids are sparse in the real tables, so the readout has to speak in ids: a
+  -- position range reads as a bug next to rows numbered 10, 20, 30
+  local saved = env.pfDB.quests.loc
+  local spaced = {}
+  for i = 1, 40 do spaced[i * 10] = { T = "Sparse " .. i } end
+  env.pfDB.quests.loc = spaced
+  browser:Search("")
+  check("the readout reports the visible id range", (browser.count:GetText()) == "10-150/40", browser.count:GetText())
+  env.pfDB.quests.loc = saved
+  browser:Search("")
+end
+
+do
+  -- pfQuest-epoch rebinds the unit tab's OnEnter and touches row.tex
+  local row = browser.tabs.quests.buttons[1]
+  check("rows expose .tex for epoch's rank tooltip", row ~= nil and row.tex ~= nil and row.tex == row.bg)
+  check("rows live in the tab view", row:GetParent() == browser.tabs.quests.view)
+end
+
+env.pfBrowser_fav = { quests = { [1] = "The Killing Fields" }, units = {}, objects = {}, items = {} }
 browser:Search("")
 local favRows = 0
 for _, row in ipairs(browser.tabs.quests.buttons) do
   if row.id then favRows = favRows + 1 end
 end
-check("empty search falls back to favourites", favRows == 0)
+check("favourites win over browsing when they exist", favRows == 1, favRows)
+env.pfBrowser_fav = { quests = {}, units = {}, objects = {}, items = {} }
 
 browser.tabs.quests.buttons[1]:Reload()
 browser.tabs.quests.buttons[1].id = 1
@@ -306,7 +396,27 @@ check("favourite toggles pfBrowser_fav", env.pfBrowser_fav.quests[1] == "The Kil
 
 browser:Select("items")
 check("select switches tab", browser.active == "items")
-check("only the selected scroll frame is shown", browser.tabs.items.scroll.shown == true and browser.tabs.quests.scroll.shown == false)
+check("only the selected tab view is shown", browser.tabs.items.view.shown == true and browser.tabs.quests.view.shown == false)
+-- four sliders stacked at the same point read as one bar with a doubled thumb
+check("the previous tab slider is hidden", browser.tabs.quests.slider.shown == false, browser.tabs.quests.slider.shown)
+
+do
+  -- the earlier blocks shrank the quest table, so give it something to overflow
+  local saved = env.pfDB.quests.loc
+  local savedFav = env.pfBrowser_fav.quests
+  env.pfBrowser_fav.quests = {}
+  local pool = {}
+  for i = 1, 50 do pool[i] = { T = "Pool " .. i } end
+  env.pfDB.quests.loc = pool
+  browser.input:SetText("")
+  if browser.Search then browser:Search("") end
+  browser:Select("quests")
+  check("the selected tab slider is shown", browser.tabs.quests.slider.shown == true, browser.tabs.quests.slider.shown)
+  check("the items slider hides with its tab", browser.tabs.items.slider.shown == false, browser.tabs.items.slider.shown)
+  env.pfDB.quests.loc = saved
+  env.pfBrowser_fav.quests = savedFav
+  if browser.Search then browser:Search("") end
+end
 
 browser.input:SetText("linen")
 check("typing drives a search", (browser.tabs.items.buttons[1].text:GetText() or ""):find("Linen Cloth") ~= nil)

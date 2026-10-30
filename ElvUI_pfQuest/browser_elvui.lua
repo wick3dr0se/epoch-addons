@@ -27,14 +27,20 @@
 
 local addonName, ns = ...
 
-local SEARCH_LIMIT = 100
 local ROW_HEIGHT = 20
+-- rows are a fixed window that moves over the list, the way a scroll viewport
+-- would, but owned here: a ScrollFrame child anchored to its parent does not
+-- move when the scroll offset changes, which is what made the wheel and slider
+-- do nothing while the thumb still travelled
+local VISIBLE_ROWS = 15
 local TYPES = {
   { key = "quests", caption = "Quests" },
   { key = "units", caption = "Units" },
   { key = "objects", caption = "Objects" },
   { key = "items", caption = "Items" },
 }
+
+local render, move, layoutThumb
 
 local browser = CreateFrame("Frame", "pfQuestBrowser", UIParent)
 pfBrowser = browser
@@ -103,6 +109,15 @@ pfq.Font(browser.input.hint, pfq.fontSize)
 browser.input.hint:SetPoint("LEFT", 6, 0)
 browser.input.hint:SetTextColor(0.5, 0.5, 0.5)
 browser.input.hint:SetText((pfQuest_Loc["Search"] or "Search"))
+browser.input:SetTextInsets(6, 64, 0, 0)
+
+-- shown/total for the active tab, kept off the tab buttons: "Quests (100/7058)"
+-- does not fit a 110 pixel button and every tab truncates to the same string
+browser.count = browser.input:CreateFontString(nil, "OVERLAY")
+pfq.Font(browser.count, pfq.fontSize)
+browser.count:SetPoint("RIGHT", browser.input, "RIGHT", -6, 0)
+browser.count:SetJustifyH("RIGHT")
+browser.count:SetTextColor(0.6, 0.6, 0.6)
 
 ---------------------------------------------------------------------------
 -- result rows
@@ -183,7 +198,7 @@ local function rowFavourite(row)
 end
 
 local function createRow(tab, index)
-  local row = CreateFrame("Button", nil, tab.list)
+  local row = CreateFrame("Button", nil, tab.view)
   row:SetHeight(ROW_HEIGHT)
   row:SetPoint("TOPLEFT", 0, -(index - 1) * ROW_HEIGHT)
   row:SetPoint("TOPRIGHT", 0, -(index - 1) * ROW_HEIGHT)
@@ -193,6 +208,10 @@ local function createRow(tab, index)
   row.bg = row:CreateTexture(nil, "BACKGROUND")
   row.bg:SetAllPoints()
   row.bg:SetTexture(0, 0, 0, 0)
+
+  -- pfQuest-epoch replaces OnEnter on the unit tab and touches row.tex, which
+  -- is the field name upstream used for the row highlight texture
+  row.tex = row.bg
 
   row.fav = CreateFrame("Button", nil, row)
   row.fav:SetSize(14, 14)
@@ -234,6 +253,9 @@ local function createRow(tab, index)
     GameTooltip:Hide()
   end)
   row:SetScript("OnClick", function(self, button) rowClick(self, button) end)
+  row:SetScript("OnMouseWheel", function(_, delta)
+    move(tab, -(delta or 0) * 2)
+  end)
 
   return row
 end
@@ -242,22 +264,155 @@ end
 -- tabs and search
 ---------------------------------------------------------------------------
 
+local updateCount
+
 function browser:Select(key)
   self.active = key
+  if updateCount then updateCount(self) end
 
   local r, g, b = pfq.accent()
   for _, entry in ipairs(TYPES) do
     local tab = self.tabs[entry.key]
     if tab then
       if entry.key == key then
-        tab.scroll:Show()
+        tab.view:Show()
+        render(tab)
         pfq.SetButtonFontColor(tab.button, r, g, b, 1)
       else
-        tab.scroll:Hide()
+        tab.view:Hide()
+        if tab.slider then tab.slider:Hide() end
         pfq.SetButtonFontColor(tab.button, 1, 1, 1, 0.7)
       end
     end
   end
+end
+
+-- An empty search box browses instead of searching: list the table from the top
+-- so the window is not blank until the player types. Favourites win when the
+-- player has any, since that is what the tab used to show.
+local function listedEntries(kind)
+  local pool = pfDB and pfDB[kind] and pfDB[kind]["loc"]
+  if not pool then return nil end
+
+  local ids = {}
+  for id in pairs(pool) do ids[#ids + 1] = id end
+  table.sort(ids)
+
+  local ret = {}
+  for i = 1, #ids do
+    local id = ids[i]
+    local loc = pool[id]
+    if kind == "quests" and type(loc) == "table" then loc = loc["T"] end
+    if loc and loc ~= "" then ret[id] = loc end
+  end
+  return ret
+end
+
+updateCount = function(self)
+  if not self.count then return end
+  local tab = self.tabs and self.tabs[self.active or "quests"]
+  if not tab then
+    self.count:SetText("")
+    return
+  end
+  -- the readout speaks in ids, because ids are what the rows show. Positions
+  -- would be a second numbering scheme that never matches what is on screen.
+  local data = tab.data or {}
+  local total = #data
+  if total == 0 then
+    self.count:SetText("0")
+    return
+  end
+
+  local offset = tab.offset or 0
+  local firstItem = data[offset + 1]
+  local lastItem = data[math.min(offset + VISIBLE_ROWS, total)]
+  if not firstItem then
+    self.count:SetText(tostring(total))
+    return
+  end
+
+  local firstId = tostring(firstItem.id)
+  local lastId = lastItem and tostring(lastItem.id) or firstId
+  if firstId == lastId then
+    self.count:SetText(string.format("%s/%d", firstId, total))
+  else
+    self.count:SetText(string.format("%s-%s/%d", firstId, lastId, total))
+  end
+end
+
+-- draw the window of rows that the current offset points at
+render = function(tab)
+  local data = tab.data or {}
+  local total = #data
+  local maxOffset = math.max(0, total - VISIBLE_ROWS)
+
+  if tab.offset > maxOffset then tab.offset = maxOffset end
+  if tab.offset < 0 then tab.offset = 0 end
+
+  for i = 1, VISIBLE_ROWS do
+    if not tab.buttons[i] then
+      tab.buttons[i] = createRow(tab, i)
+    end
+
+    local row = tab.buttons[i]
+    local item = data[tab.offset + i]
+
+    if item then
+      local made, err = pcall(function()
+        row.btype = tab.key
+        row.id = item.id
+        row.name = item.name or tostring(item.id)
+        row:Reload()
+        row:Show()
+      end)
+      if not made then
+        row.id = nil
+        row:Hide()
+        tab.failure = tab.failure or err
+      end
+    else
+      row.id = nil
+      row:Hide()
+    end
+  end
+
+  if tab.slider then
+    tab.slider.maxValue = maxOffset
+    tab.slider.value = tab.offset
+    if maxOffset > 0 then tab.slider:Show() else tab.slider:Hide() end
+    layoutThumb(tab)
+  end
+end
+
+move = function(tab, delta)
+  tab.offset = (tab.offset or 0) + delta
+  render(tab)
+  updateCount(browser)
+end
+
+-- the thumb spans the slice of the list on screen and slides over the track;
+-- a fixed 40 pixel bar told you nothing about how much was left
+layoutThumb = function(tab)
+  local slider = tab.slider
+  if not slider or not slider.thumb then return end
+
+  local trackHeight = slider:GetHeight() or 0
+  if trackHeight <= 0 then return end
+
+  local total = #(tab.data or {})
+  local share = VISIBLE_ROWS / math.max(total, VISIBLE_ROWS)
+  local height = trackHeight * share
+  if height < 24 then height = 24 end
+  if height > trackHeight then height = trackHeight end
+
+  local max = slider.maxValue or 0
+  local fraction = 0
+  if max > 0 then fraction = (tab.offset or 0) / max end
+  if fraction < 0 then fraction = 0 elseif fraction > 1 then fraction = 1 end
+
+  slider.thumb:SetHeight(height)
+  slider.thumb:SetPoint("TOP", slider, "TOP", 0, -fraction * (trackHeight - height))
 end
 
 function browser:Search(text)
@@ -268,39 +423,32 @@ function browser:Search(text)
   for _, entry in ipairs(TYPES) do
     local kind = entry.key
     local tab = self.tabs[kind]
-    local data = (strlen(query) >= 3 or custom)
-      and pfDatabase:GetIDByName(query, kind, true, custom)
-      or (pfBrowser_fav and pfBrowser_fav[kind])
+    local data
 
-    local count = 0
+    if custom or strlen(query) >= 3 then
+      data = pfDatabase:GetIDByName(query, kind, true, custom)
+    elseif strlen(query) == 0 then
+      local fav = pfBrowser_fav and pfBrowser_fav[kind]
+      data = (fav and next(fav)) and fav or listedEntries(kind)
+    else
+      data = pfBrowser_fav and pfBrowser_fav[kind]
+    end
+
+    local list = {}
     if data then
       for id, name in pairs(data) do
-        count = count + 1
-        if count >= SEARCH_LIMIT then break end
-        if not tab.buttons[count] then
-          tab.buttons[count] = createRow(tab, count)
-        end
-        local row = tab.buttons[count]
-        row.btype = kind
-        row.id = id
-        row.name = name
-        row:Reload()
-        row:Show()
+        list[#list + 1] = { id = id, name = name }
       end
+      table.sort(list, function(a, b) return a.id < b.id end)
     end
 
-    for i = count + 1, #tab.buttons do
-      tab.buttons[i].id = nil
-      tab.buttons[i]:Hide()
-    end
-
-    tab.list:SetHeight(max(count, 1) * ROW_HEIGHT)
-
-    local label = tab.button:GetFontString()
-    if label then
-      label:SetText(entry.caption .. " |cffaaaaaa(" .. (count >= SEARCH_LIMIT and "*" or count) .. ")|r")
-    end
+    tab.data = list
+    tab.offset = 0
+    tab.failure = nil
+    render(tab)
   end
+
+  updateCount(self)
 end
 
 ---------------------------------------------------------------------------
@@ -317,14 +465,84 @@ for index, entry in ipairs(TYPES) do
   end)
   tab.button:SetPoint("TOPLEFT", 10 + (index - 1) * 114, -60)
 
-  tab.scroll = pfq.CreateScrollFrame("pfQuestBrowser" .. entry.key, browser)
-  tab.scroll:SetPoint("TOPLEFT", 10, -84)
-  tab.scroll:SetPoint("BOTTOMRIGHT", -10, 10)
-
-  tab.list = pfq.CreateScrollChild("pfQuestBrowser" .. entry.key .. "Scroll", tab.scroll)
-  tab.list:SetWidth(1)
-  tab.list:SetHeight(1)
+  tab.data = {}
+  tab.offset = 0
   tab.buttons = {}
+
+  tab.view = CreateFrame("Frame", nil, browser)
+  tab.view:SetPoint("TOPLEFT", 10, -84)
+  tab.view:SetPoint("BOTTOMRIGHT", -22, 10)
+  tab.view:EnableMouseWheel(1)
+  tab.view:SetScript("OnMouseWheel", function(_, delta) move(tab, -(delta or 0) * 2) end)
+
+  -- Two frames of our own rather than a Slider: a real Slider gets a second
+  -- thumb texture from the skin engine, which reads as one bar frozen at the
+  -- top and another that moves. A track plus a bar cannot do that.
+  local slider = CreateFrame("Frame", nil, tab.view)
+  tab.slider = slider
+  slider:SetPoint("TOPLEFT", tab.view, "TOPRIGHT", 12, 0)
+  slider:SetPoint("BOTTOMLEFT", tab.view, "BOTTOMRIGHT", 12, 0)
+  slider:SetWidth(12)
+  slider:EnableMouse(true)
+  slider.maxValue = 0
+  slider.value = 0
+
+  slider.track = slider:CreateTexture(nil, "BACKGROUND")
+  slider.track:SetAllPoints()
+  slider.track:SetTexture(pfq.blankTex())
+  slider.track:SetVertexColor(1, 1, 1, 0.08)
+
+  slider.thumb = slider:CreateTexture(nil, "OVERLAY")
+  slider.thumb:SetWidth(10)
+  slider.thumb:SetTexture(pfq.blankTex())
+  do
+    local r, g, b = pfq.accent()
+    slider.thumb:SetVertexColor(r, g, b, 0.85)
+  end
+
+  slider.SetMinMaxValues = function(self, min, max) self.maxValue = max or 0 end
+  slider.GetMinMaxValues = function(self) return 0, self.maxValue or 0 end
+  slider.GetValue = function(self) return self.value or 0 end
+  slider.SetValue = function(self, value)
+    local max = self.maxValue or 0
+    value = math.max(0, math.min(max, math.floor((value or 0) + 0.5)))
+    if value == (self.value or 0) then return end
+    self.value = value
+    tab.offset = value
+    render(tab)
+    updateCount(browser)
+  end
+
+  -- no OnValueChanged here on purpose: that script type belongs to Sliders and
+  -- Edits, and a plain Frame rejects it, which aborted the whole file at load
+  -- and left one tab built and nothing wired
+
+  -- follow the cursor while the button is held, the way a scrollbar should
+  slider:SetScript("OnMouseDown", function(self) self.dragging = true end)
+  slider:SetScript("OnMouseUp", function(self) self.dragging = false end)
+  slider:SetScript("OnUpdate", function(self)
+    if not self.dragging then return end
+    if not IsMouseButtonDown("LeftButton") then
+      self.dragging = false
+      return
+    end
+
+    local max = self.maxValue or 0
+    if max <= 0 then return end
+
+    local _, cursorY = GetCursorPosition()
+    local scale = self:GetEffectiveScale() or 1
+    if scale == 0 then scale = 1 end
+    local top = self:GetTop() or 0
+    local height = self:GetHeight() or 0
+    if height <= 0 then return end
+
+    local fraction = (top - (cursorY / scale)) / height
+    if fraction < 0 then fraction = 0 elseif fraction > 1 then fraction = 1 end
+    self:SetValue(fraction * max)
+  end)
+
+  slider:SetScript("OnMouseWheel", function(_, delta) move(tab, -(delta or 0) * 2) end)
 end
 
 browser.input:SetScript("OnTextChanged", function(self)
